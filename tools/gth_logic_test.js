@@ -1,0 +1,918 @@
+/* 错题助手逻辑判据（本项目专用，跑在 node 里，不碰浏览器）
+
+   用法：
+     node tools/gth_logic_test.js [脚本路径]
+
+   为什么这样写：被测的函数**从脚本原文里抽出来**跑，不复制实现。
+   复制一份断言只保护「复制品」，把脚本里那行改回去照样全绿；抽原文才能当突变守卫——
+   下面这些用例就是照着「如果把这行改回修复前的样子，哪条会红」设计的，每条都标了它守的是什么。
+
+   分工：DOM 与站点请求不在这里验（脚本猫里 L2 验），这里只验纯逻辑，各块守什么见小标题。
+*/
+const fs = require('fs');
+const blankLiterals = require('./blank_literals');
+
+const FILE = process.argv[2] || 'gongan-wrong-questions-helper.user.js';
+const raw = fs.readFileSync(FILE, 'utf8');
+const blank = blankLiterals(raw);
+
+/* ---------- 抽取器 ---------- */
+
+// 从 blanked 副本上数括号，返回原文切片：字符串与注释里的括号不算数
+function sliceToStatementEnd(from) {
+  let depth = 0;
+  for (let i = from; i < blank.length; i++) {
+    const c = blank[i];
+    if (c === '(' || c === '{' || c === '[') depth++;
+    else if (c === ')' || c === '}' || c === ']') depth--;
+    else if (c === ';' && depth === 0) return raw.slice(from, i + 1);
+  }
+  throw new Error('语句没有收尾：' + raw.slice(from, from + 60));
+}
+
+function fnSource(name) {
+  const needle = '\n  function ' + name + '(';
+  const at = blank.indexOf(needle);
+  if (at < 0) throw new Error('脚本里找不到函数：' + name);
+  const start = at + 1;
+  let depth = 0, i = blank.indexOf('{', start), end = i;
+  for (; end < blank.length; end++) {
+    const c = blank[end];
+    if (c === '{') depth++;
+    else if (c === '}') { depth--; if (!depth) break; }
+  }
+  if (i < 0 || depth !== 0) throw new Error('函数体花括号不配对：' + name);
+  return raw.slice(start, end + 1);
+}
+
+function varSource(name) {
+  const re = new RegExp('\n  var ' + name + ' = ');
+  const m = re.exec(blank);
+  if (!m) throw new Error('脚本里找不到变量：' + name);
+  const start = m.index + 1;
+  let out = sliceToStatementEnd(start);
+  // 紧随其后的「SUBJECT_NAME[SUBJ_ZY] = …」这类逐行赋值一起收进来
+  const lines = raw.slice(start).split('\n');
+  const extra = [];
+  for (let i = 1; i < lines.length; i++) {
+    const t = lines[i].trim();
+    if (t.indexOf(name + '[') === 0 && /;$/.test(t)) extra.push(lines[i]);
+    else break;
+  }
+  return out + extra.join('\n');
+}
+
+const CONSTS = ['SUBJ_ZY', 'SUBJ_XC', 'SUBJECT_NAME', 'DAY_RANGES', 'MASTER_STREAK',
+  'WRONG_BASE', 'STUBBORN_MIN', 'ERR_COUNT_KEYS', 'SRC_KEYS', 'SRC_NAME', 'MOCK_UNCLS',
+  'PUNCT_RE', 'KEYACT', 'EXPORT_PREFIX',
+  'MOCK_QID_KEYS', 'MOCK_STEM_KEYS', 'MOCK_MAT_KEYS', 'MOCK_OPT_KEYS', 'MOCK_USER_KEYS',
+  'MOCK_CORRECT_KEYS', 'MOCK_ANALYSIS_KEYS', 'MOCK_SUBJECT_KEYS', 'MOCK_RESULT_KEYS',
+  'MOCK_MODULE_KEYS', 'selectedModules', 'selectedMockModules', 'practiceSrcs',
+  'notesFilter', 'notesSearchKey', 'examPointModule'];
+
+const FNS = ['ansKey', 'serverErrCount', 'errCountOf', 'masteredLabel', 'isMastered',
+  'bumpWrongCount', 'markPracticed', 'isPracticed', 'moduleOf', 'rememberModule',
+  'getHighlights', 'countHighlights', 'pickKey',
+  'srcList', 'srcLabel', 'dayLabel', 'subjectDesc', 'filterDesc', 'currentSrc', 'readFilter',
+  'mockModuleOf', 'mockResultOf', 'mockParseAns', 'mockParseOpt', 'looksLikeQuestion',
+  'mockFieldMap', 'mergeMockQs', 'mockMatchModule', 'mockToList', 'mockAllList', 'mockWrongList',
+  'mockModuleOptions', 'tierOf', 'weightedShuffle', 'weightedPick',
+  'masteryKey', 'noteFacets', 'noteMatch', 'mergeConcurrent', 'fetchByFilter',
+  'hasSiteSrc', 'notesNarrowed', 'norm', 'normMap', 'hlHoldLost', 'migrateHlLost', 'washHlLost',
+  'buildExamPointIndex', 'rememberModulesFromPoints',
+  'resumeKeyOld', 'readResume', 'clearResume',
+  'fetchXingce', 'buildModuleOptions', 'fetchXingceBy', 'fetchFavoriteXingce',
+  'listPath', 'listParams', 'esc', 'hlRowHtml', 'noteIdsWithHl'];
+
+const PRELUDE = [
+  'var console = { log: noop, warn: function (m) { ctx.warns.push(String(m)); }, error: noop };',
+  'function noop() {}',
+  "var LS_STORE = 'gth_test_store';",
+  'var store = ctx.store;',
+  'var saveStore = function () { ctx.saved++; };',
+  'var setStatus = function (m) { ctx.status.push(m); };',
+  'var invalidateLoaded = function () { ctx.invalidated++; };',
+  'var apiGet = function (url, p) { ctx.api.push([url, p]); return ctx.apiResult(); };',
+  'var getCommodity = function () { return Promise.resolve({ content_id: 7, id: 8 }); };',
+  'var fetchErrors = function (f, limit) { ctx.calls.push(["error", f]); return Promise.resolve(ctx.errors || []); };',
+  'var fetchFavorites = function (f) { ctx.calls.push(["favorite", f]); return Promise.resolve(ctx.favorites || []); };',
+  'var fetchSubcategory = function () { return Promise.resolve(ctx.subcategory || []); };',
+  'var normalize = function (q) { return q; };',
+  'var onProgress = null;',
+  'var $ = function (sel) { return (ctx.el || {})[sel] || null; };',
+  'var $$ = function () { return []; };',
+  'var localStorage = { getItem: function () { return ctx.disk; } };',
+  'var alert = function (m) { ctx.alerts.push(String(m)); };',
+  'var icon = function (n) { return "<svg>" + n + "</svg>"; };'
+];
+
+// 抽出来还要暴露给测试：FNS 里加了名字却忘了进这份名单，build() 不报错，
+// 用到它的那条判据只会拿到 undefined，报出来是「m.foo is not a function」这种看不懂的话
+const EXPOSED = [
+  'srcList', 'srcLabel', 'filterDesc', 'readFilter', 'fetchByFilter', 'hasSiteSrc',
+  'mockModuleOf', 'mockFieldMap', 'mergeMockQs', 'mockToList', 'mockAllList', 'mockWrongList',
+  'mockModuleOptions', 'tierOf', 'weightedPick', 'weightedShuffle', 'errCountOf', 'moduleOf',
+  'rememberModule', 'markPracticed', 'isPracticed', 'noteFacets', 'noteMatch', 'masteryKey',
+  'mergeConcurrent', 'masteredLabel', 'store', 'notesNarrowed', 'norm', 'normMap', 'KEYACT',
+  'getSelectedMock: function () { return selectedMockModules; }',
+  'getPracticeSrcs: function () { return practiceSrcs; }',
+  'getSaved: function () { return ctx.saved; }',
+  'fetchXingce', 'buildModuleOptions', 'fetchFavoriteXingce', 'listPath', 'listParams', 'hlRowHtml', 'noteIdsWithHl', 'pickKey',
+  'hlHoldLost', 'migrateHlLost', 'washHlLost', 'buildExamPointIndex', 'rememberModulesFromPoints',
+  'SRC_NAME', 'SRC_KEYS', 'EXPORT_PREFIX', 'resumeKeyOld', 'readResume', 'clearResume'
+];
+const EXPOSE = "return {" + EXPOSED.map(function (n) { return n.indexOf(':') >= 0 ? n : n + ': ' + n; }).join(', ') + '};';
+
+function build(ctx) {
+  const body = PRELUDE.join('\n') + '\n' +
+    CONSTS.map(varSource).join('\n') + '\n' +
+    FNS.map(fnSource).join('\n') + '\n' +
+    'if (ctx.practiceSrcs) practiceSrcs = ctx.practiceSrcs;\n' +
+    'if (ctx.selectedModules) selectedModules = ctx.selectedModules;\n' +
+    'if (ctx.selectedMockModules) selectedMockModules = ctx.selectedMockModules;\n' +
+    'if (ctx.notesFilter) notesFilter = ctx.notesFilter;\n' +
+    'if (ctx.notesSearchKey != null) notesSearchKey = ctx.notesSearchKey;\n' +
+    'if (ctx.examPointModule) examPointModule = ctx.examPointModule;\n' +
+    EXPOSE;
+  try {
+    const api = new Function('ctx', body)(Object.assign({
+      store: {}, warns: [], status: [], saved: 0, invalidated: 0, api: [], alerts: [], calls: [],
+      apiResult: function () { return Promise.resolve({ subject_list: [] }); }
+    }, ctx || {}));
+    // 问一个没暴露的名字要当场炸，别让 undefined 溜进断言里变成看不懂的报错
+    return new Proxy(api, {
+      get: function (t, k) {
+        if (typeof k === 'symbol' || k in t) return t[k];
+        throw new Error('EXPOSED 里没有 ' + String(k) + '：FNS 抽了这个名字，忘了同步进 EXPOSED');
+      }
+    });
+  } catch (e) {
+    console.log('[X] 沙箱构建失败：' + e.message + '\n    （抽出来的原文不自洽，多半是依赖的函数/变量改名了）');
+    throw e;
+  }
+}
+
+/* ---------- 断言工具 ---------- */
+
+let pass = 0;
+const fails = [];
+function ok(cond, label, detail) {
+  if (cond) { pass++; return; }
+  fails.push(label + (detail ? '　→ ' + detail : ''));
+}
+function eq(actual, expected, label) {
+  const a = JSON.stringify(actual), b = JSON.stringify(expected);
+  ok(a === b, label, a === b ? '' : '实得 ' + a + '，应为 ' + b);
+}
+function ids(list) { return list.map(function (q) { return String(q.id); }).sort(); }
+function mkStore(o) {
+  return Object.assign({
+    notes: {}, mastered: {}, wrongCount: {}, exported: {}, exportAt: {}, highlights: {},
+    mockQs: {}, mocks: {}, resume: {}, history: [], practiced: {}, qModule: {}
+  }, o || {});
+}
+function q(id, extra) { return Object.assign({ id: id, content: '题干' + id, opt: [], correct_answer: ['A'] }, extra || {}); }
+
+/* ---------- T1 来源归一（守：重练的勾选式多选、以及旧组卷历史里那种单个 src（含 both），
+   都必须落到同一套 srcs 数组）---------- */
+
+(function t1() {
+  const m = build();
+  eq(m.srcList({ src: 'both' }), ['error', 'favorite'], 'T1 旧记录 src=both 展开成两个来源');
+  eq(m.srcList({ src: 'mock' }), ['mock'], 'T1 旧记录 src=mock 原样');
+  eq(m.srcList({ srcs: ['mock', 'error', 'error'] }), ['mock', 'error'], 'T1 多选去重且保序');
+  eq(m.srcList({ srcs: ['nope', 'error'] }), ['error'], 'T1 不认识的来源被丢掉');
+  eq(m.srcList({}), ['error'], 'T1 没写来源时退回错题本');
+  eq(m.srcLabel(['error', 'mock']), '错题本＋模考收录', 'T1 来源描述用勾选项的名字');
+})();
+
+/* ---------- T2 筛选描述（守 bug 2 的根：模考来源以前直接 return，条件被整个丢掉）---------- */
+
+(function t2() {
+  const m = build();
+  eq(m.filterDesc({ srcs: ['error', 'favorite'], mode: 'date', dayRange: '0' }),
+    '错题本＋收藏夹 · 日期：当天', 'T2 两个站点来源＋日期');
+  eq(m.filterDesc({ srcs: ['error', 'mock'], mode: 'subject', subject: 0,
+    module_names: ['资料分析'], mock_modules: ['政治理论'] }),
+    '错题本 · 行政职业能力测试（资料分析） ＋ 模考收录（政治理论）', 'T2 站点条件与模考模块各写各的');
+  eq(m.filterDesc({ srcs: ['mock'], mode: 'date', dayRange: '1' }),
+    '模考收录（全部模考题）', 'T2 只勾模考时不出现日期/科目（模考题没有这两维）');
+  eq(m.filterDesc({ srcs: ['mock'], mock_modules: ['法律'] }),
+    '模考收录（法律）', 'T2 模考模块进了描述，resumeKey 才能按它区分');
+  eq(m.filterDesc({ src: 'both', mode: 'subject', subject: 1 }),
+    '错题本＋收藏夹 · 公安专业知识', 'T2 旧的单 src 组卷历史仍能描述');
+})();
+
+/* ---------- T3 面板条件读取（守 bug 1：导出保持单选、重练走勾选；模块勾选只随模考进条件）---------- */
+
+(function t3() {
+  const m = build({
+    el: {
+      '#gth-mode': { value: 'subject' }, '#gth-subject': { value: '0' },
+      '#gth-src': { value: 'both' }, '#gth-day': { value: '0' }
+    },
+    practiceSrcs: ['mock'],
+    selectedModules: ['资料分析'],
+    selectedMockModules: ['政治理论']
+  });
+  const ex = m.readFilter('export');
+  eq(ex.srcs, ['both'], 'T3 导出 pane 仍读单选下拉');
+  eq(ex.module_names, ['资料分析'], 'T3 导出 pane 带上行测模块');
+  ok(ex.mock_modules === undefined, 'T3 没勾模考收录时不把模块勾选写进条件（看不见的筛选不算条件）');
+  const pr = m.readFilter('practice');
+  eq(pr.srcs, ['mock'], 'T3 重练 pane 读勾选式多选');
+  eq(pr.mock_modules, ['政治理论'], 'T3 勾了模考收录才带上模考模块');
+})();
+
+/* ---------- T4/T5 取题（守 bug 2：模考分支不再无视筛选条件；并守住这套来源合并语义——
+   模考答错的题跟着错题本并进来，而只勾收藏夹时一道模考题都不带）---------- */
+
+async function t45() {
+  // '7' 是只有模考里才有的答错题（站点题库没有同 id）。加它之前，夹具里唯一的模考错题 id=1
+  // 与站点错题 1 撞车，去重之后结果集与「接线有没有拆掉」完全一样——把 fetchByFilter 里那行
+  // `wantErr ? mockWrongList(mods) : []` 整行拆成 `[]`，判据仍全绿，是假绿。
+  // 有了 7，下面那条「只勾错题本」的集合相等就是双向守：少带 7（接线拆掉/只并答对题都算）判红，
+  // 多带 2 或 3（把答对与未做的也并进来）也判红。
+  const mockQs = {
+    '1': { id: 1, content: 'a', module: 'A', done: 1, ok: 0, examId: '5158' },
+    '2': { id: 2, content: 'b', module: 'B', done: 1, ok: 1, examId: '5158' },
+    '3': { id: 3, content: 'c', done: 0, ok: 0, examId: '5158' },
+    '7': { id: 7, content: 'g', module: 'C', done: 1, ok: 0, examId: '5158' }
+  };
+  const m = build({ store: mkStore({ mockQs: mockQs }), errors: [q(100), q(1)], favorites: [q(200)] });
+
+  eq(ids(await m.fetchByFilter({ srcs: ['mock'], mock_modules: ['A'] })), ['1'],
+    'T4 模考收录按模块筛：只回 A 的 1 题');
+  eq(ids(await m.fetchByFilter({ srcs: ['mock'], mock_modules: ['未分类'] })), ['3'],
+    'T4 未分类桶捞到没有模块名的老记录');
+  eq(ids(await m.fetchByFilter({ srcs: ['mock'] })), ['1', '2', '3', '7'],
+    'T4 不勾模块 = 全部收录题（含答对与未做）');
+
+  eq(ids(await m.fetchByFilter({ srcs: ['error'] })), ['1', '100', '7'],
+    'T5 只勾错题本：站点题＋模考答错的题（含模考独有的 7，这条同时守着并入接线本身），id 撞车只留一份');
+  eq(ids(await m.fetchByFilter({ srcs: ['favorite'] })), ['200'],
+    'T5 只勾收藏夹：不带模考题（模考答错只随错题本并进来）');
+  eq(ids(await m.fetchByFilter({ srcs: ['error', 'favorite'] })), ['1', '100', '200', '7'],
+    'T5 错题本＋收藏夹：并集去重');
+  eq(ids(await m.fetchByFilter({ srcs: ['mock', 'error'], mock_modules: ['B'] })), ['1', '100', '2'],
+    'T5 模考收录＋错题本：站点两题都在，模考按模块筛只剩 B 那道答对的');
+  const mockOnlyFiltered = await m.fetchByFilter({ srcs: ['mock'], mock_modules: ['A'] });
+  ok(mockOnlyFiltered.length === 1, 'T5 突变守卫：模考分支不能再走「永远全部题目」（那是无视筛选的缺陷态）');
+}
+
+/* ---------- T6 收录合并（守：旧记录能补上模块，题面与判分不被覆盖）---------- */
+
+(function t6() {
+  const store = mkStore({
+    mockQs: {
+      '1': { id: 1, content: 'OLD', module: '', done: 1, ok: 0, at: 1, user_answer: ['A'],
+        correct_answer: ['B'], opt: [], analysis: '', material: '', examId: '5158' }
+    }
+  });
+  const m = build({ store: store });
+  const incoming = { id: 1, content: 'NEW', material: '', opt: [], correct_answer: ['B'],
+    user_answer: ['A'], analysis: '', content_type: null, module: '政治理论', result: 0 };
+  m.mergeMockQs([incoming], '5158');
+  eq(store.mockQs['1'].module, '政治理论', 'T6 旧记录补上模块名');
+  eq(store.mockQs['1'].content, 'OLD', 'T6 补模块不动已存题面');
+  eq(store.wrongCount['1'], 1, 'T6 已有错题重复收录时按 processed 幂等再计一次');
+
+  m.mergeMockQs([{ id: 2, content: 'x', material: '', opt: [], correct_answer: ['A'],
+    user_answer: ['B'], analysis: '', content_type: null, module: '法律', result: 0 }], '9');
+  eq(store.mockQs['2'].module, '法律', 'T6 新题连模块一起入库');
+  eq(store.mockQs['2'].examId, '9', 'T6 新题记下场次');
+
+  m.mergeMockQs([{ id: 3, content: 'x', material: '', opt: [], correct_answer: ['A'],
+    user_answer: '', analysis: '', content_type: null, module: '', result: 2 }], '9');
+  eq(store.mockQs['3'].done, 0, 'T6 未做不算做过');
+  ok(!store.wrongCount['3'], 'T6 未做不进答错次数');
+
+  eq(ids(m.mockAllList([])), ['1', '2', '3'], 'T6 全部收录含未做');
+  eq(ids(m.mockWrongList([])), ['1', '2'], 'T6 只算答错的并进错题本');
+  eq(ids(m.mockWrongList(['法律'])), ['2'], 'T6 并进错题本那一路也听模块勾选');
+  eq(m.mockModuleOptions().map(function (o) { return o.name + ':' + o.n; }).sort(),
+    ['政治理论:1', '法律:1', '未分类:1'].sort(), 'T6 模考 chips 由本地收录自己生成（含未分类）');
+})();
+
+/* ---------- T7 模块取值（守：不拿卷名 root_name 猜模块，避免重演 type 兜底那次误标）---------- */
+
+(function t7() {
+  const m = build();
+  eq(m.mockModuleOf({ examPointName: '政治理论', exam_point: '常识' }), '政治理论',
+    'T7 列表态的 examPointName 优先于接口字段');
+  eq(m.mockModuleOf({ exam_point: '常识判断' }), '常识判断', 'T7 只有接口 exam_point 时用它');
+  eq(m.mockModuleOf({ check_point: '法律' }), '法律', 'T7 check_point 兜底');
+  eq(m.mockModuleOf({ root_name: '2026 模考大赛' }), '', 'T7 卷名不是模块，留空');
+  const full = m.mockFieldMap({ id: 123, content: '题干', opt: '[{"label":"A","content":"甲"}]',
+    correct_answer: '["A"]', userAnswers: ['B'], result: 0, type: 0, type_name: '单选题',
+    examPointName: '政治理论' });
+  eq([full.module, full.content_type], ['政治理论', null],
+    'T7 映射后带模块，且不再拿题型当科目兜底');
+})();
+
+/* ---------- T8/T9 组卷分层（守 bug 3：顽固与尚未重练必须排在前面）---------- */
+
+(function t8() {
+  const store = mkStore({
+    wrongCount: { s: 5, u: 0, p: 1, mm: 5, fresh: 1 },
+    mastered: { mm: { streak: 2 }, pm: { streak: 2, manual: 1 }, p: { streak: 1 } },
+    practiced: { p: { n: 1, at: 1 }, mm: { n: 2, at: 1 }, pm: {} }
+  });
+  const m = build({ store: store });
+  eq(m.tierOf(q('s')), 0, 'T8 错满 3 次 = 顽固层');
+  eq(m.tierOf(q('u')), 1, 'T8 没交卷过 = 尚未重练层');
+  eq(m.tierOf(q('p')), 2, 'T8 练过但没连对两次 = 第三层');
+  eq(m.tierOf(q('mm')), 3, 'T8 已掌握沉到最后（哪怕它是顽固错题）');
+  eq(m.tierOf(q('pm')), 3, 'T8 收藏页手动打的「已掌握」也算掌握，不进尚未重练');
+  eq(m.tierOf(q('fresh', {})), 1, 'T8 刚收进来的模考错题（次数 2）先归入尚未重练');
+})();
+
+(function t9() {
+  const store = mkStore({
+    wrongCount: { s1: 5, s2: 5, u1: 0, u2: 0, u3: 0, u4: 0, u5: 0, p1: 1, p2: 1, p3: 1 },
+    mastered: { m1: { streak: 2 }, m2: { streak: 2 }, m3: { streak: 2 } },
+    practiced: { p1: { n: 1 }, p2: { n: 1 }, p3: { n: 1 }, m1: { n: 2 }, m2: { n: 2 }, m3: { n: 2 } }
+  });
+  const m = build({ store: store });
+  const all = ['s1', 's2', 'u1', 'u2', 'u3', 'u4', 'u5', 'p1', 'p2', 'p3', 'm1', 'm2', 'm3']
+    .map(function (id) { return q(id); });
+  let leakedP = 0, leakedM = 0, missStubborn = 0, wrongSize = 0;
+  for (let i = 0; i < 400; i++) {
+    const picked = m.weightedPick(all, 4).map(function (x) { return String(x.id); });
+    if (picked.length !== 4) wrongSize++;
+    if (!(picked.indexOf('s1') >= 0 && picked.indexOf('s2') >= 0)) missStubborn++;
+    picked.forEach(function (id) {
+      if (/^p/.test(id)) leakedP++;
+      if (/^m/.test(id)) leakedM++;
+    });
+  }
+  eq([wrongSize, missStubborn, leakedP, leakedM], [0, 0, 0, 0],
+    'T9 400 次随机抽 4 题：两道顽固必中、第三四层一次都不漏进（层序被截断保护）');
+  const whole = m.weightedPick(all, 0).map(function (x) { return m.tierOf(x); });
+  eq(whole, whole.slice().sort(function (a, b) { return a - b; }),
+    'T9 题量=0 时按层排完整张卷（0,0,1,1,…,3,3 不交叉）');
+  eq(m.weightedPick(all, 0).length, 13, 'T9 题量=0 仍是全部 13 题');
+})();
+
+/* ---------- T10 笔记筛选（守 bug 4：来源/科目/模块/掌握/内容五个维度真能筛）---------- */
+
+(function t10() {
+  const store = mkStore({
+    notes: {
+      n1: { text: '甲', subject: 1, updated: 5 },
+      n2: { text: '乙', subject: 0, updated: 4 },
+      n3: {},
+      n4: { text: '丁', updated: 3 }
+    },
+    highlights: { n1: [{ quote: 'q', subject: 1, at: 1 }], n3: [{ quote: 'z', at: 1 }] },
+    mastered: { n1: { streak: 2 }, n2: { streak: 1 } },
+    qModule: { n2: '资料分析' },
+    mockQs: { n4: { id: 'n4', module: '政治理论', done: 1, ok: 0 } }
+  });
+  const m = build({ store: store });
+  const all = ['n1', 'n2', 'n3', 'n4'];
+  const pick = function (nf) {
+    return all.filter(function (id) { return m.noteMatch(m.noteFacets(id), nf); });
+  };
+  eq(pick({}), all, 'T10 不加条件时全在');
+  eq(pick({ src: 'mock' }), ['n4'], 'T10 按来源筛：在模考收录里的才算模考题');
+  eq(pick({ src: 'site' }), ['n1', 'n2', 'n3'], 'T10 按来源筛：练习题');
+  eq(pick({ subj: '1' }), ['n1'], 'T10 按科目筛：公安专业知识');
+  eq(pick({ subj: 'x' }), ['n3', 'n4'], 'T10 科目没记录的落到未分类桶（模考题都在这）');
+  eq(pick({ mod: '资料分析' }), ['n2'], 'T10 按模块筛：来自行测考点映射');
+  eq(pick({ mod: '政治理论' }), ['n4'], 'T10 按模块筛：来自模考收录的模块名');
+  eq(pick({ mod: '未分类' }), ['n1', 'n3'], 'T10 两处都没有模块名的进未分类');
+  eq(pick({ mast: 'done' }), ['n1'], 'T10 掌握状态：已掌握');
+  eq(pick({ mast: 'un' }), ['n3', 'n4'], 'T10 掌握状态：未掌握');
+  eq(pick({ cont: 'both' }), ['n1'], 'T10 内容：笔记＋划线都有');
+  eq(pick({ cont: 'hl' }), ['n1', 'n3'], 'T10 内容：有划线');
+  eq(pick({ subj: '1', mod: '资料分析' }), [], 'T10 条件是「与」关系');
+})();
+
+/* ---------- T11 多标签只增合并（守：新加的两块也得走同一套只增规则）---------- */
+
+(function t11() {
+  const disk = JSON.stringify({
+    mockQs: { '9': { id: 9, content: 'D', at: 100 } },
+    practiced: { p1: { n: 3, at: 10 }, p2: { n: 1, at: 5 } },
+    qModule: { q1: 'A', q2: 'B' },
+    wrongCount: { w1: 7 }
+  });
+  const store = mkStore({
+    mockQs: { '9': { id: 9, content: 'M', at: 50 } },
+    practiced: { p1: { n: 1, at: 99 } },
+    qModule: { q1: '本标签先记的' },
+    wrongCount: { w1: 2 }
+  });
+  const m = build({ store: store, disk: disk });
+  m.mergeConcurrent(store);
+  eq(store.practiced.p1.n, 3, 'T11 重练登记取次数大的那份（不看时间戳大小）');
+  ok(store.practiced.p2, 'T11 别的标签新登记的重练保住了');
+  eq(store.qModule.q1, '本标签先记的', 'T11 模块映射先到先得，不被覆盖');
+  eq(store.qModule.q2, 'B', 'T11 本标签没有的模块映射补进来');
+  eq(store.wrongCount.w1, 7, 'T11 答错次数仍取大值（旧规则没被改坏）');
+  eq(store.mockQs['9'].content, 'D', 'T11 模考快照仍按 at 取新（旧规则没被改坏）');
+  eq(build({ store: mkStore(), disk: '坏 JSON{' }).mergeConcurrent({ mockQs: {} }), { mockQs: {} },
+    'T11 磁盘是坏 JSON 时不炸、原样返回');
+})();
+
+/* ---------- T12 「练过」的生命周期（守：交卷登记真的会影响分层，而不是只写不看）---------- */
+
+(function t12() {
+  const store = mkStore({ wrongCount: { x: 0 } });
+  const m = build({ store: store });
+  eq(m.tierOf(q('x')), 1, 'T12 没练过时在第 2 层（尚未重练）');
+  m.markPracticed('x');
+  ok(m.isPracticed('x'), 'T12 交卷后登记上了');
+  eq(m.tierOf(q('x')), 2, 'T12 登记后从「尚未重练」层挪走');
+  eq(store.practiced.x.n, 1, 'T12 次数从 1 起');
+  m.markPracticed('x');
+  eq(store.practiced.x.n, 2, 'T12 再交一次卷次数 +1');
+})();
+
+/* ---------- T13 行测拉题顺手记模块（守 bug 4 的数据来源：没有这一步，笔记的模块筛选就是空的）---------- */
+
+async function t13() {
+  const store = mkStore();
+  let calls = 0;
+  const m = build({
+    store: store,
+    subcategory: [
+      { id: 11, name: '常识判断', exampoint_list: [{ id: 111, name: '政治理论' }, { id: 112, name: '法律' }] },
+      { id: 12, name: '资料分析', exampoint_list: [] }
+    ],
+    apiResult: function () {
+      calls++;
+      const n = calls;
+      return Promise.resolve({ subject_list: n === 1 ? [q(1)] : n === 2 ? [q(2)] : [q(1)], total_items: 1 });
+    }
+  });
+  const out = await m.fetchXingce([], null);
+  eq(ids(out), ['1', '2'], 'T13 按考点逐个拉题并按 id 去重');
+  eq(store.qModule, { 1: '政治理论', 2: '法律' }, 'T13 题目属于哪个考点被记进 qModule');
+  eq(m.moduleOf(1), '政治理论', 'T13 moduleOf 读得到');
+  eq(m.buildModuleOptions(m.store ? [] : []).length, 0, 'T13 空分类返回空表（不炸）');
+}
+
+/* ---------- T14 两处「看着能点却不参与取题/取数」的守卫（二审提出来之后补的）---------- */
+
+(function t14() {
+  const m = build();
+  ok(!m.hasSiteSrc(['mock']), 'T14 只勾模考收录 → 站点那套条件不适用');
+  ok(m.hasSiteSrc(['error', 'mock']), 'T14 还勾了错题本 → 站点条件仍适用');
+  ok(m.hasSiteSrc(['both']), 'T14 旧的 both 展开后算站点来源');
+  ok(m.hasSiteSrc(['error']), 'T14 纯错题本算站点来源');
+  ok(!m.notesNarrowed(), 'T14 五个下拉全空且没输入关键词 = 没收窄');
+  eq(build({ notesFilter: { subj: '1' } }).notesNarrowed(), true, 'T14 任一下拉生效算收窄');
+  eq(build({ notesSearchKey: '宪法' }).notesNarrowed(), true, 'T14 只输入关键词也算收窄');
+  eq(build({ notesSearchKey: '   ' }).notesNarrowed(), false, 'T14 空格不算收窄');
+})();
+
+/* ---------- T15 归一化（守：locate 的模糊匹配拿 normMap 的 text 去 indexOf(norm(quote))，
+   两边都得把标点洗干净。连续标点曾因为 PUNCT_RE 带 /g 而隔一个漏一个）---------- */
+
+(function t15() {
+  const m = build();
+  [['，，。A，，B。', 'AB'], ['第一句、第二句；第三句！！', '第一句第二句第三句'],
+  ['（（重点））本题选 A', '重点本题选A'], ['a - b — c · d', 'abcd'],
+  ['选A。　选B。', '选A选B'], ['正常题干没有标点', '正常题干没有标点']].forEach(function (p) {
+    eq(m.norm(p[0]), p[1], 'T15 norm 洗掉全部标点：' + JSON.stringify(p[0]));
+    eq(m.normMap(p[0]).text, p[1], 'T15 normMap 与 norm 同口径：' + JSON.stringify(p[0]));
+  });
+  eq(m.normMap('a，，b').map, [0, 3], 'T15 map 指向保留字符在原文里的下标');
+  eq(m.normMap('，A、B。').map, [1, 3], 'T15 开头的标点也算，map 不漏位');
+  eq(m.norm('　 \t '), '', 'T15 全空白归一化成空串');
+})();
+
+/* ---------- T16 行测的两条路（守合并后的 fetchXingceBy：错题走 error/view 且带分页，
+   收藏走 favorite/view 且不传分页——这是站点接口实测出来的差异，不是笔误）---------- */
+
+async function t16() {
+  const sub = [{ id: 11, name: '常识判断', exampoint_list: [{ id: 111, name: '政治理论' }] }];
+  async function grab(name) {
+    const api = [];
+    const m = build({
+      store: mkStore(), subcategory: sub, api: api,
+      apiResult: function () { return Promise.resolve({ subject_list: [] }); }
+    });
+    await m[name](['政治理论'], null);
+    return api[0];
+  }
+  const err = await grab('fetchXingce');
+  const fav = await grab('fetchFavoriteXingce');
+  ok(err && fav, 'T16 两条路都真的发了请求');
+  eq(err[0], 'content/7/error/view', 'T16 行测错题走 error/view');
+  eq(fav[0], 'content/7/favorite/view', 'T16 行测收藏走 favorite/view');
+  eq([err[1].view_type, err[1].content_type], [1, 0], 'T16 错题用科目型视图且 content_type=行测');
+  eq([fav[1].view_type, fav[1].content_type], [1, 0], 'T16 收藏同一口径');
+  eq([err[1].subcategory_id, err[1].exampoint_id], [11, 111], 'T16 错题按考点逐个请求');
+  eq([fav[1].subcategory_id, fav[1].exampoint_id], [11, 111], 'T16 收藏也按考点逐个请求');
+  eq([err[1].page, err[1].page_size], [0, 100], 'T16 错题接口带分页参数');
+  ok(!('page' in fav[1]) && !('page_size' in fav[1]), 'T16 收藏接口不传分页（favorite/view 一次性返回）');
+  eq(err[1].agency_commodity_id, fav[1].agency_commodity_id, 'T16 两条路都带 agency_commodity_id');
+}
+
+/* ---------- T17 划线行的唯一出处（守：合并之前笔记面板/页边批注栏/重练题目三处各写一遍同一份
+   标记，改一处漏两处。下面三个期望串是从合并前的脚本原文里跑出来的，不是手写的）---------- */
+
+(function t17() {
+  const m = build();
+  const h = { quote: '题干<重点>', color: 'red', note: '批注甲', lost: false };
+  const gone = { quote: '失效', color: 'yellow', note: '', lost: true };
+  eq(m.hlRowHtml(h, 0, '点击改批注'),
+    '<div class="gth-hlp-item" data-hl="0"><span class="dot red"></span>' +
+    '<div class="bd"><div class="t" title="点击写批注">题干&lt;重点&gt;</div>' +
+    '<div class="n" title="点击改批注">批注甲</div></div>' +
+    '<span class="rm" title="取消划线"><svg>x</svg></span></div>',
+    'T17 页边/重练那两处的行标记原样');
+  eq(m.hlRowHtml(h, 0, ''),
+    '<div class="gth-hlp-item" data-hl="0"><span class="dot red"></span>' +
+    '<div class="bd"><div class="t" title="点击写批注">题干&lt;重点&gt;</div>' +
+    '<div class="n">批注甲</div></div>' +
+    '<span class="rm" title="取消划线"><svg>x</svg></span></div>',
+    'T17 笔记面板的批注行不挂 title');
+  eq(m.hlRowHtml(gone, 7, '点击改批注'),
+    '<div class="gth-hlp-item lost" data-hl="7"><span class="dot yellow"></span>' +
+    '<div class="bd"><div class="t" title="点击写批注">失效</div></div>' +
+    '<span class="rm" title="取消划线"><svg>x</svg></span></div>',
+    'T17 失效划线加 lost、没批注就不出 .n');
+  ok(m.hlRowHtml({ quote: 'q', color: 'red', note: 'n', lost: false }, 0, 'say "hi"')
+    .indexOf('title="say &quot;hi&quot;"') >= 0, 'T17 提示语是拼进属性的，含引号必须转义');
+})();
+
+/* ---------- T18 笔记口径的唯一出处（守：笔记 tab 与「一键整理为笔记」以前各写一遍
+   「有笔记 或 有划线」，改一处漏一处就会两边列得不一样）---------- */
+
+(function t18() {
+  const m = build({
+    store: mkStore({
+      notes: { 1: { text: '甲' }, 2: null },
+      highlights: { 1: [{ quote: '重复的题' }], 3: [{ quote: '只有划线' }], 4: [] }
+    })
+  });
+  eq(m.noteIdsWithHl(), ['1', '2', '3'],
+    'T18 有笔记的都算，只有划线的补进来，空划线不算，两边都有的不重复');
+  eq(build({ store: mkStore() }).noteIdsWithHl(), [], 'T18 空库返回空');
+})();
+
+/* ---------- T19 pickKey 的「空」到底算哪些（守：站点题目字段名不统一，取第一个有值的；
+   本轮把三段判空写成 v != null，0 和 false 必须仍然算有值）---------- */
+
+(function t19() {
+  const m = build();
+  eq(m.pickKey({ a: null, b: 1 }, ['a', 'b']), 1, 'T19 null 算空，继续找下一个');
+  eq(m.pickKey({ a: '', b: 2 }, ['a', 'b']), 2, 'T19 空串算空');
+  eq(m.pickKey({ a: undefined, b: 3 }, ['a', 'b']), 3, 'T19 undefined 算空');
+  eq(m.pickKey({ b: 2 }, ['a', 'b']), 2, 'T19 键不存在算空');
+  eq(m.pickKey({ a: 0, b: 2 }, ['a', 'b']), 0, 'T19 答对/答错这类 0 值是真值，不能跳过');
+  eq(m.pickKey({ a: false, b: true }, ['a', 'b']), false, 'T19 false 同样不能当空跳过');
+  eq(m.pickKey({}, ['a']), undefined, 'T19 全都没有时返回 undefined');
+})();
+
+/* ---------- T20 接线（守：上面那些合并只证明「帮助函数自己是对的」，不证明「原来那几处真的改成
+   调它了」。把某个调用点改回抄一份内联标记，判据一样全绿——所以这里直接数原文里的出现次数）---------- */
+
+(function t20() {
+  function countOf(needle) {
+    var n = 0, i = 0;
+    while ((i = raw.indexOf(needle, i)) >= 0) { n++; i += needle.length; }
+    return n;
+  }
+  const W = [
+    ["'<div class=\"gth-hlp-item' + (h.lost", 1, '划线行的标记全文只有 hlRowHtml 一处'],
+    ['hlRowHtml(h, i, \'\')', 1, '笔记面板那一个调用点仍是不挂 title 的'],
+    ['hlRowHtml(h, i, \'点击改批注\')', 2, '页边批注栏与重练题目两处仍挂着 title'],
+    ['= noteIdsWithHl();', 2, '笔记 tab 与一键整理两处共用同一口径'],
+    ['rerenderAsides();', 2, '恢复数据后与划线变动后两处共用'],
+    ["$$('.gth-aside').forEach", 1, '批注栏重画的遍历只有一份'],
+    ['if (it && !a.dataset.editing) renderAside(a, it);', 1, '正在编辑的那一题不重画，这条判据还在'],
+    ['fetchXingceBy(', 3, '行测流程一份 + 错题/收藏两个转发'],
+    ['apiGet(listPath(kind, ci), params)', 1, '行测的接口路径由 kind 决定，不再各写一遍'],
+    ["'<div class=\"gth-hlp-item\" data-hl=\"'", 1, '整理为笔记那处的简版行（无批注栏/无 ✕）是有意另写的，没被并进去'],
+    ['repaintOne(qid);', 2, '改色与取消划线两处共用重落笔'],
+    ['qRoot(qid)', 4, 'qid 选择器一处定义三处调用'],
+    // 入口名与控件高度：都是「看着没事、改回去就分叉」的那类，只能数原文
+    ["'<div class=\"text\">' + icon('sparkles') + '机考助手</div>'", 1, '左菜单入口名只有一份字符串，两页共用'],
+    ['height:var(--gth-ctl-h', 4, '按钮 / 输入下拉 / 模考浮标 / 浮标内按钮共用同一个高度令牌，谁退回写死高度就红'],
+    ['if (hlHoldLost(rec, analysisShown)) return;', 1, 'paintRoot 真的在问这个判据，不是写了个没人调的函数'],
+    ['= migrateHlLost(data);', 1, '库初始化真的走这次清洗，不只是有个函数'],
+    ['washHlLost(store.highlights)', 1, '恢复备份也洗一次：旧备份里那批假失效不能带回来'],
+    ["<span class=\"gth-caret\">' + icon('chevronDown')", 1, '划线清单的展开标识是一个箭头，不是两个字'],
+    // 页面加载了 bootstrap 3.3.7，它有个全局 .caret 用 border 画实心向下三角形；
+    // 我们的规则只覆盖 width/height，碰不到 border-*，于是两个箭头叠在一起
+    ['.caret{', 0, 'CSS 里不许出现不带 gth- 前缀的 .caret 选择器（与 bootstrap 全局类撞车）'],
+    ['class="caret"', 0, '标记里不许出现不带 gth- 前缀的 class="caret"（同上）'],
+    ['caret.textContent', 0, '朝向由 CSS 跟着 .on 派生，JS 不再往 caret 里写「展开 / 收起」'],
+    ['syncKeyTargets();', 3, '键盘可达在观察器刷新与两处初始化里都补了，漏一处就有节点永远点不到'],
+    ['busy(btn, ensureLoaded(', 2, '导出两颗按钮真的被 busy 包住，不是只写了个 helper'],
+    ['busy(this, fetchByFilter(', 1, '组卷按钮也走同一条置灰通路'],
+    ['gth-nf-mod-hint', 2, '模块维的来源提示：模板里有一个节点，代码里有开关，两头都在'],
+    ["closest('.gth-balloon')", 1, '气球点得开批注框，cursor:pointer 不是假的'],
+    // hlRowHtml 把 .t / .n 包在 <div class="bd"> 里，按 parentNode 取到的其实是 .bd，
+    // 它身上没有 data-hl → Number(undefined) = NaN → openHlNote 收到一个不存在的下标，点着没反应
+    ['parentNode.dataset.hl', 0, '划线行的下标一律从 closest(.gth-hlp-item) 取，不许退回 parentNode'],
+    ['rememberModulesFromPoints(list);', 1, 'fetchByFilter 真的顺手登记模块，不只是有个函数'],
+    ['examPointModule = buildExamPointIndex(list);', 1, '拿到考点表的同时把 id→模块 的索引填上'],
+    ['（黄 \' + ', 0, '收起态标题不再带颜色细分——窄轨道下它会把标题挤成两行'],
+    ['var avail = (document.documentElement.clientWidth', 1, '轨道宽度按可视区右缘现算，不再信那个假设容器居中的 clamp'],
+    // 面板重绘门：壳每次都贴，内容只在 store 真变过时画
+    ['storeRev++;', 2, '写盘与多标签合并两处都要 bump，漏一处面板就不跟着数据变'],
+    ['panelRev = storeRev;', 1, 'renderPanel 画完记下画的是哪个版本'],
+    ['if (viewOn) setView(true);', 0, '观察器不许再走面板的完整开启流程（那会每次重画整段组卷历史）'],
+    // 行测模块的取题门
+    ['!modulesLoading && !modulesLoaded', 1, '并发与「返回空表」两种重发都门住'],
+    ['modulesLoading = true;', 1, '发请求前置在飞'],
+    ['modulesLoaded = true;', 1, '成功过才置已取到'],
+    ['      modulesLoading = false;', 2, '成功与失败两条都要解开在飞：失败还得靠下一次用户动作重试（数的是缩进里那两处，不数声明）'],
+    ['if (xc && !moduleList.length) loadModules();', 0, '无门的旧写法不许回来（站点一挂就变成刷请求）'],
+    ['el.value = want; invalidateLoaded(); updateExportHint();', 1, '来源默认值跟着页面换了，自己把提示刷回来'],
+    // 续刷老键自愈：四处读写都要走同一个口子
+    ['var r = readResume(key);', 1, 'resumeOffset 走自愈读'],
+    ['seq ? readResume(key) : null', 1, '开轮走自愈读'],
+    ['readResume(resumeKey(', 1, '续刷提示走自愈读'],
+    ['clearResume(key);', 1, '刷到末尾的清除走同一个口子'],
+    ['clearResume(resumeKey(', 1, '「从头开始」把老键一起删'],
+    ['var r = key && store.resume[key];', 0, '不许留「只读新键」的写法：那样老进度永远接不上'],
+    ['delete store.resume[resumeKey(', 0, '不许留「只删新键」的写法：那样老键删不掉'],
+    // 模考导出的文件名
+    ["mock: '上岸村模考收录_'", 1, '模考来源有自己的文件名前缀'],
+    ['(EXPORT_PREFIX[currentSrc()] || ', 1, '文件名按当前来源取前缀这一处没被抄成第二份'],
+    // 取题期间改筛选
+    ['var desc0 = filterDesc(f);', 1, '按下那一刻的条件留下来准备比对'],
+    ["toast('筛选在取题期间改过了", 1, '不一致时真的说一句，不是只存了个变量']
+  ];
+  W.forEach(function (p) {
+    eq(countOf(p[0]), p[1], 'T20 ' + p[2]);
+  });
+})();
+
+/* ---------- T21 启动顺序（守：脚本自己后半段有没有活着执行过。缺陷类别、当年那次踩坑的经过、
+   以及为什么无头判据看不见它，权威出处都在 `AGENTS.md` 的「验证」一节，这里只放判据本身）---------- */
+
+(function t21() {
+  const find = require('./gth_init_order').find;
+  let bad;
+  try { bad = find(FILE); } catch (e) { bad = [{ v: '(抽取失败 ' + e.message + ')', fn: '', decl: 0, call: 0, entry: '' }]; }
+  eq(bad.map(function (x) { return x.v + '@' + x.fn; }), [],
+    'T21 没有「顶层同步调用会读到还没赋值的 var」');
+  bad.forEach(function (x) {
+    ok(false, 'T21 ' + x.v + '：赋值在第 ' + x.decl + ' 行，但第 ' + x.call + ' 行的 ' +
+      x.entry + ' 已经会走到 ' + x.fn + '() 里读它');
+  });
+})();
+
+/* ---------- T22 收起解析 ≠ 划线失效（守：站点收起解析后 .analysis 里只剩「解析」这个标题字、
+   正文那个 <p> 是空的，解析区的划线此时根本定位不到。把它记成 lost，删除线和
+   「原文已变更，未能重新定位」会一起带进批注栏、重练界面和导出的笔记）---------- */
+
+(function t22() {
+  const m = build();
+  ok(m.hlHoldLost({ block: 'analysis' }, false), 'T22 解析区 + 解析没渲染：先不下结论');
+  ok(!m.hlHoldLost({ block: 'analysis' }, true), 'T22 解析区 + 解析已展开：仍走原来的失效判定');
+  ok(!m.hlHoldLost({ block: 'stem' }, false), 'T22 题干的划线不受解析收起影响');
+  ok(!m.hlHoldLost({ block: 'opt' }, false), 'T22 选项的划线同上');
+  ok(!m.hlHoldLost({ block: 'material' }, false), 'T22 材料的划线同上');
+  // block 是后加的字段：存量划线没有它，缺字段必须退回旧行为，不能整批豁免掉失效判定
+  ok(!m.hlHoldLost({}, false), 'T22 没有 block 的存量划线照旧判定');
+  ok(!m.hlHoldLost({ block: 'other' }, false), 'T22 归不到块的划线照旧判定');
+})();
+
+/* ---------- T23 撤掉误判的「划线已失效」（守：解析收起时正文不在 DOM 里，解析区的划线会被写成
+   lost，而它跟着「一键整理」进用户导出的笔记；非解析区的 lost 是真信号，不能被顺手一起洗掉）---------- */
+
+(function t23() {
+  const m = build();
+  function one(rec) { return { q1: [rec] }; }
+
+  // —— 洗的那一圈：库初始化与恢复备份共用 ——
+  eq(m.washHlLost(one({ quote: 'a', block: 'analysis', lost: true, miss: 1 })), 1,
+    'T23 解析区的失效标记清掉一条，返回清掉的条数');
+  (function () {
+    var h = one({ quote: 'a', block: 'analysis', lost: true, miss: 1 });
+    m.washHlLost(h);
+    eq(h.q1[0].lost, undefined, 'T23 lost 真的从记录上删了，不是只数不删');
+    eq(h.q1[0].miss, undefined, 'T23 连 miss 一起清，重判从干净状态开始');
+  })();
+  eq(m.washHlLost(one({ quote: 'a', block: 'stem', lost: true })), 0,
+    'T23 题干的 lost 是文本可见时连着两次判出来的，不动');
+  eq(m.washHlLost(one({ quote: 'a', block: 'material', lost: true })), 0, 'T23 材料区同上');
+  eq(m.washHlLost(one({ quote: 'a', lost: true })), 0,
+    'T23 没有 block 字段的存量记录不动：宁可不洗，也不把真失效抹掉');
+  eq(m.washHlLost(one({ quote: 'a', block: 'analysis' })), 0, 'T23 没标失效的返回 0');
+  eq(m.washHlLost(undefined), 0, 'T23 整块缺失不抛错');
+  eq(m.washHlLost({}), 0, 'T23 空库返回 0');
+  eq(m.washHlLost({ q1: '坏了' }), 0, 'T23 某题的划线不是数组时跳过，不抛错');
+  eq(m.washHlLost({ q1: [null, { block: 'analysis', lost: 1 }] }), 1,
+    'T23 数组里混进 null 也走得过去，且只清该清的那条');
+
+  // —— 库初始化的入口：只跑一次 ——
+  (function () {
+    var d = { highlights: one({ quote: 'a', block: 'analysis', lost: true }) };
+    eq(m.migrateHlLost(d), 1, 'T23 首次加载洗掉一条');
+    eq(d.hlLostMigrated, 1, 'T23 洗完在库上留下一次性标记');
+    d.highlights.q1[0].lost = true;   // 重判之后又标回来的，是真失效
+    eq(m.migrateHlLost(d), 0, 'T23 第二次加载不再洗，否则真失效会被每次打开抹掉');
+    eq(d.highlights.q1[0].lost, true, 'T23 第二次确实没动那条');
+  })();
+  eq(m.migrateHlLost({}), 0, 'T23 空库也打得上标记且返回 0');
+})();
+
+/* ---------- T24 键盘可达名单不漂（守：KEYACT 里点名的类要是被改了名，那些节点就静默地
+   永远键盘点不到——CSS 与 click 处理器都跟着改了，唯独这份没改，界面上看不出任何异常）---------- */
+
+(function t24() {
+  const m = build();
+  function countOf(needle) {
+    var n = 0, i = 0;
+    while ((i = raw.indexOf(needle, i)) >= 0) { n++; i += needle.length; }
+    return n;
+  }
+  const parts = m.KEYACT.split(',');
+  ok(parts.length >= 10, 'T24 名单不是空的（现 ' + parts.length + ' 项）');
+  parts.forEach(function (p) {
+    const first = p.trim().split(/\s+/)[0];
+    const name = /^[.#]/.test(first) ? first.slice(1) : first;
+    // 要求它在名单之外还至少出现一次：只数一次就说明这个名字只剩 KEYACT 自己引用着
+    ok(countOf(name) >= 2, 'T24 名单里的 ' + p.trim() + ' 在脚本里已经找不到第二处（类名漂了）');
+  });
+  // 真 <button> 混进来会给它重复发 tabindex，等于白占一个焦点位
+  ['gth-btn', 'gth-mini', 'gth-qbar-btn'].forEach(function (b) {
+    ok(m.KEYACT.indexOf('.' + b) < 0, 'T24 名单里不该有自带键盘的真按钮 .' + b);
+  });
+  // 焦点环必须由这份名单生成：手写第二份的话，两份迟早漂开，漂开的那半照样看不见光标
+  m.KEYACT.split(',').forEach(function (p) {
+    const name = /^[.#]/.test(p.trim().split(/\s+/)[0]) ? p.trim().split(/\s+/)[0].slice(1) : p.trim().split(/\s+/)[0];
+    ok(countOf(name + ':focus-visible') === 0, 'T24 ' + name + ' 的焦点环不该再手写一份（应由 KEYACT 生成）');
+  });
+})();
+
+/* ---------- T25 模块从每题自带的考点推出来（守：按日期 / 收藏那两路以前一个模块都登记不上，
+   而列表响应里每题都有 exam_point，只差把考点树走一遍换成顶层模块名）---------- */
+
+(function t25() {
+  const tree = [
+    { id: 1, name: '国省考真题卷', exampoint_list: [
+      { id: 41774, name: '言语理解', children: [
+        { id: 41775, name: '片段阅读', children: [{ id: 41779, name: '主旨意图', children: [] }] }] },
+      { id: 41849, name: '资料分析', children: [{ id: 41861, name: '简单加减', children: [] }] }
+    ] },
+    // 同一棵顶层在另一份考点卷里重复出现，且名字不同：先登记的算，不能被后一份改口
+    { id: 2, name: '公安联考模考卷', exampoint_list: [{ id: 41849, name: '资料分析（重复卷）', children: [] }] }
+  ];
+
+  const idx = build().buildExamPointIndex(tree);
+  eq(idx['41774'], '言语理解', 'T25 顶层节点自己就是一个模块');
+  eq(idx['41779'], '言语理解', 'T25 第三代叶子归到它所属的顶层');
+  eq(idx['41861'], '资料分析', 'T25 叶子考点换成顶层模块名');
+  eq(idx['41849'], '资料分析', 'T25 重复出现的顶层保留第一份名字');
+  eq(Object.keys(idx).length, 5, 'T25 只登记树里真有的 id');
+  eq(build().buildExamPointIndex(undefined), {}, 'T25 没有考点表时给空表，不抛错');
+  eq(build().buildExamPointIndex([{ id: 1 }]), {}, 'T25 缺 exampoint_list 不抛错');
+
+  (function () {
+    const st = mkStore();
+    const m = build({ store: st, examPointModule: idx });
+    eq(m.rememberModulesFromPoints([{ id: 7, exam_point: 41861 }, { id: 8, exam_point: 41779 }]), 2,
+      'T25 两条都按考点登记上模块');
+    eq([st.qModule['7'], st.qModule['8']], ['资料分析', '言语理解'], 'T25 登记的是顶层模块名，不是叶子考点名');
+    eq(m.getSaved(), 1, 'T25 一批题只落一次盘');
+    eq(m.rememberModulesFromPoints([{ id: 9, exam_point: 999999 }]), 0,
+      'T25 考点不在树里就不写：宁可不登记，也不猜一个模块');
+    eq(st.qModule['9'], undefined, 'T25 树里没有的 id 库里不留痕');
+    eq(m.rememberModulesFromPoints([{ id: 7, exam_point: 41774 }]), 0,
+      'T25 已登记过的不覆盖，也不再多存一次');
+    eq(st.qModule['7'], '资料分析', 'T25 先登记的模块名保持不变');
+    eq(m.rememberModulesFromPoints([{ id: 10 }, { id: null, exam_point: 41774 }, null]), 0,
+      'T25 缺 exam_point / 缺 id / 空项都跳过');
+    eq(build({ store: mkStore() }).rememberModulesFromPoints([{ id: 7, exam_point: 41861 }]), 0,
+      'T25 考点表还没拿到时一条都不登记（不拿 id 当模块名写进去）');
+  })();
+})();
+
+/* ---------- T26 续刷进度认老键（守：来源标签由 SRC_NAME.both「错题+收藏」改成逐项拼
+   「错题本＋收藏夹」之后，按新标签现算的键在老库里命不中——用户的「刷到第几题」接不上，
+   「从头开始」也删不掉那条，库里从此多一条永不命中的记录）---------- */
+
+(function t26() {
+  const m = build();
+  const bothLabel = m.srcLabel(['error', 'favorite']);
+  const NEW = bothLabel + ' · 日期：全部|seq';
+  const OLD = m.SRC_NAME.both + ' · 日期：全部|seq';
+
+  // 这条自愈只靠这两份字面量对上：漂了就不是「少清一条记录」，而是老进度静默接不上
+  eq(bothLabel, '错题本＋收藏夹', 'T26 逐项拼的合并标签没漂（自愈拿它当新键里的查找串）');
+  eq(m.SRC_NAME.both, '错题+收藏', 'T26 老键里那份合并标签没漂（漂了就够不着用户库里的记录）');
+  eq(m.resumeKeyOld(NEW), OLD, 'T26 新键换算得出老键');
+  eq(m.resumeKeyOld('错题本 · 日期：全部|seq'), '错题本 · 日期：全部|seq',
+    'T26 单来源的键换算等于自己，不去动别人的记录');
+  eq(m.resumeKeyOld('模考收录（全部模考题）|seq'), '模考收录（全部模考题）|seq',
+    'T26 只勾模考的键换算也等于自己');
+
+  (function () {   // 只有老键：搬成新键、删掉老键、落一次盘
+    const st = mkStore({ resume: {} });
+    st.resume[OLD] = { idx: 7, id: 88, answered: { '88': 1 } };
+    const t = build({ store: st });
+    const r = t.readResume(NEW);
+    ok(r && r.idx === 7, 'T26 老键里的进度读得到');
+    eq(st.resume[OLD], undefined, 'T26 搬完删掉老键，库里不留永不命中的记录');
+    var moved = st.resume[NEW];
+    ok(!!moved, 'T26 进度落到现算的新键上');
+    eq(moved && moved.id, 88, 'T26 搬过去的是原来那条记录');
+    eq(moved && moved.answered['88'], 1, 'T26 连「已作答」登记一起搬，不是只搬下标');
+    eq(t.getSaved(), 1, 'T26 搬家落一次盘');
+    eq((t.readResume(NEW) || {}).idx, 7, 'T26 再读走新键，结果一致');
+    eq(t.getSaved(), 1, 'T26 第二次读不再写盘');
+  })();
+
+  (function () {   // 新键已在：不被老键盖回去，也不白写盘
+    const st = mkStore({ resume: {} });
+    st.resume[NEW] = { idx: 3, id: 9 };
+    st.resume[OLD] = { idx: 99, id: 1 };
+    const t = build({ store: st });
+    eq((t.readResume(NEW) || {}).idx, 3, 'T26 新键优先，老键不参与');
+    eq(st.resume[NEW].idx, 3, 'T26 老键没把新键盖掉');
+    eq(t.getSaved(), 0, 'T26 命中新键时一次盘都不落');
+  })();
+
+  (function () {   // 两处都没有
+    const t = build({ store: mkStore() });
+    eq(t.readResume(''), null, 'T26 随机组卷那条空键不读进度，也不会误搬');
+    eq(t.readResume(undefined), null, 'T26 没传键一样返回 null');
+    eq(t.readResume(NEW), null, 'T26 两处都没有时返回 null');
+    eq(t.getSaved(), 0, 'T26 没搬东西就不写盘');
+  })();
+
+  (function () {   // 清除：新老一起删，且只在真删了东西时写盘
+    const st = mkStore({ resume: {} });
+    st.resume[OLD] = { idx: 5, id: 6 };
+    const t = build({ store: st });
+    t.clearResume(NEW);
+    eq(st.resume[OLD], undefined, 'T26 「从头开始」连老键一起删');
+    eq(t.getSaved(), 1, 'T26 删掉了东西才落盘');
+    t.clearResume(NEW);
+    eq(t.getSaved(), 1, 'T26 两处都没有时不落盘');
+    t.clearResume('');
+    eq(t.getSaved(), 1, 'T26 空键不落盘');
+  })();
+
+  // —— 导出文件名的前缀：缺一项就静默落到默认前缀上，用户在下载目录里分不出哪批是哪批 ——
+  const need = m.SRC_KEYS.concat(['both']);
+  need.forEach(function (k) {
+    ok(!!m.EXPORT_PREFIX[k], 'T26 来源 ' + k + ' 有自己的导出文件名前缀');
+    ok((m.EXPORT_PREFIX[k] || '').slice(-1) === '_', 'T26 前缀以 _ 收尾，跟日期段之间不粘连');
+  });
+  const seen = need.map(function (k) { return m.EXPORT_PREFIX[k]; });
+  eq(seen.filter(function (v, i) { return seen.indexOf(v) === i; }).length, need.length,
+    'T26 四个前缀两两不同：抄一份别人的就等于让那批文件分不清');
+  ok(String(m.EXPORT_PREFIX.mock || '').indexOf(m.SRC_NAME.mock) >= 0,
+    'T26 模考那份文件名里带的就是面板上那个来源名「模考收录」，不另起叫法');
+})();
+
+/* ---------- T27 面板的壳与内容分开重画（守：观察器原来每次都走面板的完整开启流程，站点每变一次
+   DOM 就把组卷历史整段 innerHTML 重写、监听重绑，还顺带每次重发行测模块请求）---------- */
+
+(function t27() {
+  const at = raw.indexOf('var refreshPageUI = debounce(');
+  const end = at < 0 ? -1 : raw.indexOf('}, 400);', at);
+  ok(at >= 0 && end > at, 'T27 观察器回调还是 refreshPageUI 这一处（改名要先想清楚谁在守它）');
+  const body = at >= 0 ? raw.slice(at, end) : '';
+  ok(body.indexOf('applyViewChrome(true)') >= 0, 'T27 观察器每次重贴壳：隐藏类与安家都要跟上 AngularJS 的重绘');
+  ok(body.indexOf('if (storeRev !== panelRev) renderPanel();') >= 0, 'T27 内容只在 store 真变过时画');
+  ok(body.indexOf('setView(') < 0, 'T27 观察器不走面板的完整开启流程');
+  ok(body.indexOf('syncFilterUI(') < 0, 'T27 观察器不重跑筛选行（那条路上有发站点请求的一步）');
+})();
+
+/* ---------- T28 组卷那一下：读老键、留下按下的条件、不一致要说一句（守：上面那些 T20 只数
+   字符串出现几次，把比对改成 `if (false)` 它照样绿——这里按原文切出那段处理器，逐项查）---------- */
+
+(function t28() {
+  const at = raw.indexOf("$('#gth-start').addEventListener('click'");
+  const end = at < 0 ? -1 : raw.indexOf("$('#gth-resume-reset')", at);
+  ok(at >= 0 && end > at, 'T28 组卷入口还是这一处处理器');
+  const body = at >= 0 ? raw.slice(at, end) : '';
+  [
+    ['var key = seq ? resumeKey(f, order)', 'T28 进度键按按下那一刻的条件现算'],
+    ['readResume(key)', 'T28 开轮读进度走自愈读那一圈'],
+    ['var desc0 = filterDesc(f);', 'T28 按下那一刻的筛选描述被留下来'],
+    ["if (filterDesc(readFilter('practice')) !== desc0) {", 'T28 返回时真的拿当前筛选跟留下来的那份比'],
+    ["toast('筛选在取题期间改过了", 'T28 比出不同就当着用户说，不是悄悄按旧条件出卷子'],
+    ['clearResume(key);', 'T28 刷到末尾时清进度走同一个口子'],
+    ['busy(this, fetchByFilter(', 'T28 这一段仍在 busy 的包裹里']
+  ].forEach(function (p) {
+    ok(body.indexOf(p[0]) >= 0, 'T28 ' + p[1]);
+  });
+})();
+
+/* ---------- 跑起来 ---------- */
+
+(async function main() {
+  await t45();
+  await t13();
+  await t16();
+  if (fails.length) {
+    console.log('[X] ' + fails.length + ' 条判据没过（' + pass + ' 条过）：');
+    fails.forEach(function (f) { console.log('    · ' + f); });
+    process.exit(1);
+  }
+  console.log('[OK] ' + pass + ' 条判据全过（覆盖来源组合、筛选描述、模考模块过滤、收录合并、组卷分层、笔记筛选、多标签只增合并）');
+})();
