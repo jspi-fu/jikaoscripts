@@ -1,14 +1,4 @@
-/* 错题助手逻辑判据（本项目专用，跑在 node 里，不碰浏览器）
 
-   用法：
-     node tools/gth_logic_test.js [脚本路径]
-
-   为什么这样写：被测的函数**从脚本原文里抽出来**跑，不复制实现。
-   复制一份断言只保护「复制品」，把脚本里那行改回去照样全绿；抽原文才能当突变守卫——
-   下面这些用例就是照着「如果把这行改回修复前的样子，哪条会红」设计的，每条都标了它守的是什么。
-
-   分工：DOM 与站点请求不在这里验（脚本猫里 L2 验），这里只验纯逻辑，各块守什么见小标题。
-*/
 const fs = require('fs');
 const blankLiterals = require('./blank_literals');
 
@@ -16,9 +6,6 @@ const FILE = process.argv[2] || 'gongan-wrong-questions-helper.user.js';
 const raw = fs.readFileSync(FILE, 'utf8');
 const blank = blankLiterals(raw);
 
-/* ---------- 抽取器 ---------- */
-
-// 从 blanked 副本上数括号，返回原文切片：字符串与注释里的括号不算数
 function sliceToStatementEnd(from) {
   let depth = 0;
   for (let i = from; i < blank.length; i++) {
@@ -51,7 +38,7 @@ function varSource(name) {
   if (!m) throw new Error('脚本里找不到变量：' + name);
   const start = m.index + 1;
   let out = sliceToStatementEnd(start);
-  // 紧随其后的「SUBJECT_NAME[SUBJ_ZY] = …」这类逐行赋值一起收进来
+
   const lines = raw.slice(start).split('\n');
   const extra = [];
   for (let i = 1; i < lines.length; i++) {
@@ -106,8 +93,6 @@ const PRELUDE = [
   'var icon = function (n) { return "<svg>" + n + "</svg>"; };'
 ];
 
-// 抽出来还要暴露给测试：FNS 里加了名字却忘了进这份名单，build() 不报错，
-// 用到它的那条判据只会拿到 undefined，报出来是「m.foo is not a function」这种看不懂的话
 const EXPOSED = [
   'srcList', 'srcLabel', 'filterDesc', 'readFilter', 'fetchByFilter', 'hasSiteSrc',
   'mockModuleOf', 'mockFieldMap', 'mergeMockQs', 'mockToList', 'mockAllList', 'mockWrongList',
@@ -140,7 +125,7 @@ function build(ctx) {
       store: {}, warns: [], status: [], saved: 0, invalidated: 0, api: [], alerts: [], calls: [],
       apiResult: function () { return Promise.resolve({ subject_list: [] }); }
     }, ctx || {}));
-    // 问一个没暴露的名字要当场炸，别让 undefined 溜进断言里变成看不懂的报错
+
     return new Proxy(api, {
       get: function (t, k) {
         if (typeof k === 'symbol' || k in t) return t[k];
@@ -152,8 +137,6 @@ function build(ctx) {
     throw e;
   }
 }
-
-/* ---------- 断言工具 ---------- */
 
 let pass = 0;
 const fails = [];
@@ -174,9 +157,6 @@ function mkStore(o) {
 }
 function q(id, extra) { return Object.assign({ id: id, content: '题干' + id, opt: [], correct_answer: ['A'] }, extra || {}); }
 
-/* ---------- T1 来源归一（守：重练的勾选式多选、以及旧组卷历史里那种单个 src（含 both），
-   都必须落到同一套 srcs 数组）---------- */
-
 (function t1() {
   const m = build();
   eq(m.srcList({ src: 'both' }), ['error', 'favorite'], 'T1 旧记录 src=both 展开成两个来源');
@@ -186,8 +166,6 @@ function q(id, extra) { return Object.assign({ id: id, content: '题干' + id, o
   eq(m.srcList({}), ['error'], 'T1 没写来源时退回错题本');
   eq(m.srcLabel(['error', 'mock']), '错题本＋模考收录', 'T1 来源描述用勾选项的名字');
 })();
-
-/* ---------- T2 筛选描述（守 bug 2 的根：模考来源以前直接 return，条件被整个丢掉）---------- */
 
 (function t2() {
   const m = build();
@@ -203,8 +181,6 @@ function q(id, extra) { return Object.assign({ id: id, content: '题干' + id, o
   eq(m.filterDesc({ src: 'both', mode: 'subject', subject: 1 }),
     '错题本＋收藏夹 · 公安专业知识', 'T2 旧的单 src 组卷历史仍能描述');
 })();
-
-/* ---------- T3 面板条件读取（守 bug 1：导出保持单选、重练走勾选；模块勾选只随模考进条件）---------- */
 
 (function t3() {
   const m = build({
@@ -225,15 +201,8 @@ function q(id, extra) { return Object.assign({ id: id, content: '题干' + id, o
   eq(pr.mock_modules, ['政治理论'], 'T3 勾了模考收录才带上模考模块');
 })();
 
-/* ---------- T4/T5 取题（守 bug 2：模考分支不再无视筛选条件；并守住这套来源合并语义——
-   模考答错的题跟着错题本并进来，而只勾收藏夹时一道模考题都不带）---------- */
-
 async function t45() {
-  // '7' 是只有模考里才有的答错题（站点题库没有同 id）。加它之前，夹具里唯一的模考错题 id=1
-  // 与站点错题 1 撞车，去重之后结果集与「接线有没有拆掉」完全一样——把 fetchByFilter 里那行
-  // `wantErr ? mockWrongList(mods) : []` 整行拆成 `[]`，判据仍全绿，是假绿。
-  // 有了 7，下面那条「只勾错题本」的集合相等就是双向守：少带 7（接线拆掉/只并答对题都算）判红，
-  // 多带 2 或 3（把答对与未做的也并进来）也判红。
+
   const mockQs = {
     '1': { id: 1, content: 'a', module: 'A', done: 1, ok: 0, examId: '5158' },
     '2': { id: 2, content: 'b', module: 'B', done: 1, ok: 1, examId: '5158' },
@@ -260,8 +229,6 @@ async function t45() {
   const mockOnlyFiltered = await m.fetchByFilter({ srcs: ['mock'], mock_modules: ['A'] });
   ok(mockOnlyFiltered.length === 1, 'T5 突变守卫：模考分支不能再走「永远全部题目」（那是无视筛选的缺陷态）');
 }
-
-/* ---------- T6 收录合并（守：旧记录能补上模块，题面与判分不被覆盖）---------- */
 
 (function t6() {
   const store = mkStore({
@@ -295,8 +262,6 @@ async function t45() {
     ['政治理论:1', '法律:1', '未分类:1'].sort(), 'T6 模考 chips 由本地收录自己生成（含未分类）');
 })();
 
-/* ---------- T7 模块取值（守：不拿卷名 root_name 猜模块，避免重演 type 兜底那次误标）---------- */
-
 (function t7() {
   const m = build();
   eq(m.mockModuleOf({ examPointName: '政治理论', exam_point: '常识' }), '政治理论',
@@ -310,8 +275,6 @@ async function t45() {
   eq([full.module, full.content_type], ['政治理论', null],
     'T7 映射后带模块，且不再拿题型当科目兜底');
 })();
-
-/* ---------- T8/T9 组卷分层（守 bug 3：顽固与尚未重练必须排在前面）---------- */
 
 (function t8() {
   const store = mkStore({
@@ -355,8 +318,6 @@ async function t45() {
   eq(m.weightedPick(all, 0).length, 13, 'T9 题量=0 仍是全部 13 题');
 })();
 
-/* ---------- T10 笔记筛选（守 bug 4：来源/科目/模块/掌握/内容五个维度真能筛）---------- */
-
 (function t10() {
   const store = mkStore({
     notes: {
@@ -390,8 +351,6 @@ async function t45() {
   eq(pick({ subj: '1', mod: '资料分析' }), [], 'T10 条件是「与」关系');
 })();
 
-/* ---------- T11 多标签只增合并（守：新加的两块也得走同一套只增规则）---------- */
-
 (function t11() {
   const disk = JSON.stringify({
     mockQs: { '9': { id: 9, content: 'D', at: 100 } },
@@ -417,8 +376,6 @@ async function t45() {
     'T11 磁盘是坏 JSON 时不炸、原样返回');
 })();
 
-/* ---------- T12 「练过」的生命周期（守：交卷登记真的会影响分层，而不是只写不看）---------- */
-
 (function t12() {
   const store = mkStore({ wrongCount: { x: 0 } });
   const m = build({ store: store });
@@ -430,8 +387,6 @@ async function t45() {
   m.markPracticed('x');
   eq(store.practiced.x.n, 2, 'T12 再交一次卷次数 +1');
 })();
-
-/* ---------- T13 行测拉题顺手记模块（守 bug 4 的数据来源：没有这一步，笔记的模块筛选就是空的）---------- */
 
 async function t13() {
   const store = mkStore();
@@ -455,8 +410,6 @@ async function t13() {
   eq(m.buildModuleOptions(m.store ? [] : []).length, 0, 'T13 空分类返回空表（不炸）');
 }
 
-/* ---------- T14 两处「看着能点却不参与取题/取数」的守卫（二审提出来之后补的）---------- */
-
 (function t14() {
   const m = build();
   ok(!m.hasSiteSrc(['mock']), 'T14 只勾模考收录 → 站点那套条件不适用');
@@ -468,9 +421,6 @@ async function t13() {
   eq(build({ notesSearchKey: '宪法' }).notesNarrowed(), true, 'T14 只输入关键词也算收窄');
   eq(build({ notesSearchKey: '   ' }).notesNarrowed(), false, 'T14 空格不算收窄');
 })();
-
-/* ---------- T15 归一化（守：locate 的模糊匹配拿 normMap 的 text 去 indexOf(norm(quote))，
-   两边都得把标点洗干净。连续标点曾因为 PUNCT_RE 带 /g 而隔一个漏一个）---------- */
 
 (function t15() {
   const m = build();
@@ -484,9 +434,6 @@ async function t13() {
   eq(m.normMap('，A、B。').map, [1, 3], 'T15 开头的标点也算，map 不漏位');
   eq(m.norm('　 \t '), '', 'T15 全空白归一化成空串');
 })();
-
-/* ---------- T16 行测的两条路（守合并后的 fetchXingceBy：错题走 error/view 且带分页，
-   收藏走 favorite/view 且不传分页——这是站点接口实测出来的差异，不是笔误）---------- */
 
 async function t16() {
   const sub = [{ id: 11, name: '常识判断', exampoint_list: [{ id: 111, name: '政治理论' }] }];
@@ -513,9 +460,6 @@ async function t16() {
   eq(err[1].agency_commodity_id, fav[1].agency_commodity_id, 'T16 两条路都带 agency_commodity_id');
 }
 
-/* ---------- T17 划线行的唯一出处（守：合并之前笔记面板/页边批注栏/重练题目三处各写一遍同一份
-   标记，改一处漏两处。下面三个期望串是从合并前的脚本原文里跑出来的，不是手写的）---------- */
-
 (function t17() {
   const m = build();
   const h = { quote: '题干<重点>', color: 'red', note: '批注甲', lost: false };
@@ -541,9 +485,6 @@ async function t16() {
     .indexOf('title="say &quot;hi&quot;"') >= 0, 'T17 提示语是拼进属性的，含引号必须转义');
 })();
 
-/* ---------- T18 笔记口径的唯一出处（守：笔记 tab 与「一键整理为笔记」以前各写一遍
-   「有笔记 或 有划线」，改一处漏一处就会两边列得不一样）---------- */
-
 (function t18() {
   const m = build({
     store: mkStore({
@@ -556,9 +497,6 @@ async function t16() {
   eq(build({ store: mkStore() }).noteIdsWithHl(), [], 'T18 空库返回空');
 })();
 
-/* ---------- T19 pickKey 的「空」到底算哪些（守：站点题目字段名不统一，取第一个有值的；
-   本轮把三段判空写成 v != null，0 和 false 必须仍然算有值）---------- */
-
 (function t19() {
   const m = build();
   eq(m.pickKey({ a: null, b: 1 }, ['a', 'b']), 1, 'T19 null 算空，继续找下一个');
@@ -569,9 +507,6 @@ async function t16() {
   eq(m.pickKey({ a: false, b: true }, ['a', 'b']), false, 'T19 false 同样不能当空跳过');
   eq(m.pickKey({}, ['a']), undefined, 'T19 全都没有时返回 undefined');
 })();
-
-/* ---------- T20 接线（守：上面那些合并只证明「帮助函数自己是对的」，不证明「原来那几处真的改成
-   调它了」。把某个调用点改回抄一份内联标记，判据一样全绿——所以这里直接数原文里的出现次数）---------- */
 
 (function t20() {
   function countOf(needle) {
@@ -592,15 +527,14 @@ async function t16() {
     ["'<div class=\"gth-hlp-item\" data-hl=\"'", 1, '整理为笔记那处的简版行（无批注栏/无 ✕）是有意另写的，没被并进去'],
     ['repaintOne(qid);', 2, '改色与取消划线两处共用重落笔'],
     ['qRoot(qid)', 4, 'qid 选择器一处定义三处调用'],
-    // 入口名与控件高度：都是「看着没事、改回去就分叉」的那类，只能数原文
+
     ["'<div class=\"text\">' + icon('sparkles') + '机考助手</div>'", 1, '左菜单入口名只有一份字符串，两页共用'],
     ['height:var(--gth-ctl-h', 4, '按钮 / 输入下拉 / 模考浮标 / 浮标内按钮共用同一个高度令牌，谁退回写死高度就红'],
     ['if (hlHoldLost(rec, analysisShown)) return;', 1, 'paintRoot 真的在问这个判据，不是写了个没人调的函数'],
     ['= migrateHlLost(data);', 1, '库初始化真的走这次清洗，不只是有个函数'],
     ['washHlLost(store.highlights)', 1, '恢复备份也洗一次：旧备份里那批假失效不能带回来'],
     ["<span class=\"gth-caret\">' + icon('chevronDown')", 1, '划线清单的展开标识是一个箭头，不是两个字'],
-    // 页面加载了 bootstrap 3.3.7，它有个全局 .caret 用 border 画实心向下三角形；
-    // 我们的规则只覆盖 width/height，碰不到 border-*，于是两个箭头叠在一起
+
     ['.caret{', 0, 'CSS 里不许出现不带 gth- 前缀的 .caret 选择器（与 bootstrap 全局类撞车）'],
     ['class="caret"', 0, '标记里不许出现不带 gth- 前缀的 class="caret"（同上）'],
     ['caret.textContent', 0, '朝向由 CSS 跟着 .on 派生，JS 不再往 caret 里写「展开 / 收起」'],
@@ -609,25 +543,24 @@ async function t16() {
     ['busy(this, fetchByFilter(', 2, '组卷与重扫两处都走同一条置灰通路，点了就不给连点'],
     ['gth-nf-mod-hint', 2, '模块维的来源提示：模板里有一个节点，代码里有开关，两头都在'],
     ["closest('.gth-balloon')", 1, '气球点得开批注框，cursor:pointer 不是假的'],
-    // hlRowHtml 把 .t / .n 包在 <div class="bd"> 里，按 parentNode 取到的其实是 .bd，
-    // 它身上没有 data-hl → Number(undefined) = NaN → openHlNote 收到一个不存在的下标，点着没反应
+
     ['parentNode.dataset.hl', 0, '划线行的下标一律从 closest(.gth-hlp-item) 取，不许退回 parentNode'],
     ['rememberModulesFromPoints(list);', 1, 'fetchByFilter 真的顺手登记模块，不只是有个函数'],
     ['examPointModule = buildExamPointIndex(list);', 1, '拿到考点表的同时把 id→模块 的索引填上'],
     ['（黄 \' + ', 0, '收起态标题不再带颜色细分——窄轨道下它会把标题挤成两行'],
     ['var avail = (document.documentElement.clientWidth', 1, '轨道宽度按可视区右缘现算，不再信那个假设容器居中的 clamp'],
-    // 面板重绘门：壳每次都贴，内容只在 store 真变过时画
+
     ['storeRev++;', 2, '写盘与多标签合并两处都要 bump，漏一处面板就不跟着数据变'],
     ['panelRev = storeRev;', 1, 'renderPanel 画完记下画的是哪个版本'],
     ['if (viewOn) setView(true);', 0, '观察器不许再走面板的完整开启流程（那会每次重画整段组卷历史）'],
-    // 行测模块的取题门
+
     ['!modulesLoading && !modulesLoaded', 1, '并发与「返回空表」两种重发都门住'],
     ['modulesLoading = true;', 1, '发请求前置在飞'],
     ['modulesLoaded = true;', 1, '成功过才置已取到'],
     ['      modulesLoading = false;', 2, '成功与失败两条都要解开在飞：失败还得靠下一次用户动作重试（数的是缩进里那两处，不数声明）'],
     ['if (xc && !moduleList.length) loadModules();', 0, '无门的旧写法不许回来（站点一挂就变成刷请求）'],
     ['el.value = want; invalidateLoaded(); updateExportHint();', 1, '来源默认值跟着页面换了，自己把提示刷回来'],
-    // 续刷老键自愈：四处读写都要走同一个口子
+
     ['var r = readResume(key);', 1, 'resumeOffset 走自愈读'],
     ['seq ? readResume(key) : null', 1, '开轮走自愈读'],
     ['readResume(resumeKey(', 1, '续刷提示走自愈读'],
@@ -635,13 +568,13 @@ async function t16() {
     ['clearResume(resumeKey(', 1, '「从头开始」把老键一起删'],
     ['var r = key && store.resume[key];', 0, '不许留「只读新键」的写法：那样老进度永远接不上'],
     ['delete store.resume[resumeKey(', 0, '不许留「只删新键」的写法：那样老键删不掉'],
-    // 模考导出的文件名
+
     ["mock: '上岸村模考收录_'", 1, '模考来源有自己的文件名前缀'],
     ['(EXPORT_PREFIX[currentSrc()] || ', 1, '文件名按当前来源取前缀这一处没被抄成第二份'],
-    // 取题期间改筛选
+
     ['var desc0 = filterDesc(f);', 1, '按下那一刻的条件留下来准备比对'],
     ["toast('筛选在取题期间改过了", 1, '不一致时真的说一句，不是只存了个变量'],
-    // 底部两颗按钮的接线：说明只待在问号里，长句不塞回按钮文字
+
     ["$('#gth-mod-scan').addEventListener('click'", 1, '重扫模块真的绑上了处理器'],
     ["$('#gth-stray-clean').addEventListener('click'", 1, '清理残留真的绑上了处理器'],
     ["dayRange: '4', srcs: ['error', 'favorite']", 1, '重扫走「按日期=全部」那一趟，不是逐考点配对的几十次'],
@@ -656,9 +589,6 @@ async function t16() {
   });
 })();
 
-/* ---------- T21 启动顺序（守：脚本自己后半段有没有活着执行过。缺陷类别、当年那次踩坑的经过、
-   以及为什么无头判据看不见它，权威出处都在 `AGENTS.md` 的「验证」一节，这里只放判据本身）---------- */
-
 (function t21() {
   const find = require('./gth_init_order').find;
   let bad;
@@ -671,10 +601,6 @@ async function t16() {
   });
 })();
 
-/* ---------- T22 收起解析 ≠ 划线失效（守：站点收起解析后 .analysis 里只剩「解析」这个标题字、
-   正文那个 <p> 是空的，解析区的划线此时根本定位不到。把它记成 lost，删除线和
-   「原文已变更，未能重新定位」会一起带进批注栏、重练界面和导出的笔记）---------- */
-
 (function t22() {
   const m = build();
   ok(m.hlHoldLost({ block: 'analysis' }, false), 'T22 解析区 + 解析没渲染：先不下结论');
@@ -682,19 +608,15 @@ async function t16() {
   ok(!m.hlHoldLost({ block: 'stem' }, false), 'T22 题干的划线不受解析收起影响');
   ok(!m.hlHoldLost({ block: 'opt' }, false), 'T22 选项的划线同上');
   ok(!m.hlHoldLost({ block: 'material' }, false), 'T22 材料的划线同上');
-  // block 是后加的字段：存量划线没有它，缺字段必须退回旧行为，不能整批豁免掉失效判定
+
   ok(!m.hlHoldLost({}, false), 'T22 没有 block 的存量划线照旧判定');
   ok(!m.hlHoldLost({ block: 'other' }, false), 'T22 归不到块的划线照旧判定');
 })();
-
-/* ---------- T23 撤掉误判的「划线已失效」（守：解析收起时正文不在 DOM 里，解析区的划线会被写成
-   lost，而它跟着「一键整理」进用户导出的笔记；非解析区的 lost 是真信号，不能被顺手一起洗掉）---------- */
 
 (function t23() {
   const m = build();
   function one(rec) { return { q1: [rec] }; }
 
-  // —— 洗的那一圈：库初始化与恢复备份共用 ——
   eq(m.washHlLost(one({ quote: 'a', block: 'analysis', lost: true, miss: 1 })), 1,
     'T23 解析区的失效标记清掉一条，返回清掉的条数');
   (function () {
@@ -715,20 +637,16 @@ async function t16() {
   eq(m.washHlLost({ q1: [null, { block: 'analysis', lost: 1 }] }), 1,
     'T23 数组里混进 null 也走得过去，且只清该清的那条');
 
-  // —— 库初始化的入口：只跑一次 ——
   (function () {
     var d = { highlights: one({ quote: 'a', block: 'analysis', lost: true }) };
     eq(m.migrateHlLost(d), 1, 'T23 首次加载洗掉一条');
     eq(d.hlLostMigrated, 1, 'T23 洗完在库上留下一次性标记');
-    d.highlights.q1[0].lost = true;   // 重判之后又标回来的，是真失效
+    d.highlights.q1[0].lost = true;
     eq(m.migrateHlLost(d), 0, 'T23 第二次加载不再洗，否则真失效会被每次打开抹掉');
     eq(d.highlights.q1[0].lost, true, 'T23 第二次确实没动那条');
   })();
   eq(m.migrateHlLost({}), 0, 'T23 空库也打得上标记且返回 0');
 })();
-
-/* ---------- T24 键盘可达名单不漂（守：KEYACT 里点名的类要是被改了名，那些节点就静默地
-   永远键盘点不到——CSS 与 click 处理器都跟着改了，唯独这份没改，界面上看不出任何异常）---------- */
 
 (function t24() {
   const m = build();
@@ -742,22 +660,19 @@ async function t16() {
   parts.forEach(function (p) {
     const first = p.trim().split(/\s+/)[0];
     const name = /^[.#]/.test(first) ? first.slice(1) : first;
-    // 要求它在名单之外还至少出现一次：只数一次就说明这个名字只剩 KEYACT 自己引用着
+
     ok(countOf(name) >= 2, 'T24 名单里的 ' + p.trim() + ' 在脚本里已经找不到第二处（类名漂了）');
   });
-  // 真 <button> 混进来会给它重复发 tabindex，等于白占一个焦点位
+
   ['gth-btn', 'gth-mini', 'gth-qbar-btn'].forEach(function (b) {
     ok(m.KEYACT.indexOf('.' + b) < 0, 'T24 名单里不该有自带键盘的真按钮 .' + b);
   });
-  // 焦点环必须由这份名单生成：手写第二份的话，两份迟早漂开，漂开的那半照样看不见光标
+
   m.KEYACT.split(',').forEach(function (p) {
     const name = /^[.#]/.test(p.trim().split(/\s+/)[0]) ? p.trim().split(/\s+/)[0].slice(1) : p.trim().split(/\s+/)[0];
     ok(countOf(name + ':focus-visible') === 0, 'T24 ' + name + ' 的焦点环不该再手写一份（应由 KEYACT 生成）');
   });
 })();
-
-/* ---------- T25 模块从每题自带的考点推出来（守：按日期 / 收藏那两路以前一个模块都登记不上，
-   而列表响应里每题都有 exam_point，只差把考点树走一遍换成顶层模块名）---------- */
 
 (function t25() {
   const tree = [
@@ -766,7 +681,7 @@ async function t16() {
         { id: 41775, name: '片段阅读', children: [{ id: 41779, name: '主旨意图', children: [] }] }] },
       { id: 41849, name: '资料分析', children: [{ id: 41861, name: '简单加减', children: [] }] }
     ] },
-    // 同一棵顶层在另一份考点卷里重复出现，且名字不同：先登记的算，不能被后一份改口
+
     { id: 2, name: '公安联考模考卷', exampoint_list: [{ id: 41849, name: '资料分析（重复卷）', children: [] }] }
   ];
 
@@ -799,17 +714,12 @@ async function t16() {
   })();
 })();
 
-/* ---------- T26 续刷进度认老键（守：来源标签由 SRC_NAME.both「错题+收藏」改成逐项拼
-   「错题本＋收藏夹」之后，按新标签现算的键在老库里命不中——用户的「刷到第几题」接不上，
-   「从头开始」也删不掉那条，库里从此多一条永不命中的记录）---------- */
-
 (function t26() {
   const m = build();
   const bothLabel = m.srcLabel(['error', 'favorite']);
   const NEW = bothLabel + ' · 日期：全部|seq';
   const OLD = m.SRC_NAME.both + ' · 日期：全部|seq';
 
-  // 这条自愈只靠这两份字面量对上：漂了就不是「少清一条记录」，而是老进度静默接不上
   eq(bothLabel, '错题本＋收藏夹', 'T26 逐项拼的合并标签没漂（自愈拿它当新键里的查找串）');
   eq(m.SRC_NAME.both, '错题+收藏', 'T26 老键里那份合并标签没漂（漂了就够不着用户库里的记录）');
   eq(m.resumeKeyOld(NEW), OLD, 'T26 新键换算得出老键');
@@ -818,7 +728,7 @@ async function t16() {
   eq(m.resumeKeyOld('模考收录（全部模考题）|seq'), '模考收录（全部模考题）|seq',
     'T26 只勾模考的键换算也等于自己');
 
-  (function () {   // 只有老键：搬成新键、删掉老键、落一次盘
+  (function () {
     const st = mkStore({ resume: {} });
     st.resume[OLD] = { idx: 7, id: 88, answered: { '88': 1 } };
     const t = build({ store: st });
@@ -834,7 +744,7 @@ async function t16() {
     eq(t.getSaved(), 1, 'T26 第二次读不再写盘');
   })();
 
-  (function () {   // 新键已在：不被老键盖回去，也不白写盘
+  (function () {
     const st = mkStore({ resume: {} });
     st.resume[NEW] = { idx: 3, id: 9 };
     st.resume[OLD] = { idx: 99, id: 1 };
@@ -844,7 +754,7 @@ async function t16() {
     eq(t.getSaved(), 0, 'T26 命中新键时一次盘都不落');
   })();
 
-  (function () {   // 两处都没有
+  (function () {
     const t = build({ store: mkStore() });
     eq(t.readResume(''), null, 'T26 随机组卷那条空键不读进度，也不会误搬');
     eq(t.readResume(undefined), null, 'T26 没传键一样返回 null');
@@ -852,7 +762,7 @@ async function t16() {
     eq(t.getSaved(), 0, 'T26 没搬东西就不写盘');
   })();
 
-  (function () {   // 清除：新老一起删，且只在真删了东西时写盘
+  (function () {
     const st = mkStore({ resume: {} });
     st.resume[OLD] = { idx: 5, id: 6 };
     const t = build({ store: st });
@@ -865,7 +775,6 @@ async function t16() {
     eq(t.getSaved(), 1, 'T26 空键不落盘');
   })();
 
-  // —— 导出文件名的前缀：缺一项就静默落到默认前缀上，用户在下载目录里分不出哪批是哪批 ——
   const need = m.SRC_KEYS.concat(['both']);
   need.forEach(function (k) {
     ok(!!m.EXPORT_PREFIX[k], 'T26 来源 ' + k + ' 有自己的导出文件名前缀');
@@ -878,9 +787,6 @@ async function t16() {
     'T26 模考那份文件名里带的就是面板上那个来源名「模考收录」，不另起叫法');
 })();
 
-/* ---------- T27 面板的壳与内容分开重画（守：观察器原来每次都走面板的完整开启流程，站点每变一次
-   DOM 就把组卷历史整段 innerHTML 重写、监听重绑，还顺带每次重发行测模块请求）---------- */
-
 (function t27() {
   const at = raw.indexOf('var refreshPageUI = debounce(');
   const end = at < 0 ? -1 : raw.indexOf('}, 400);', at);
@@ -891,9 +797,6 @@ async function t16() {
   ok(body.indexOf('setView(') < 0, 'T27 观察器不走面板的完整开启流程');
   ok(body.indexOf('syncFilterUI(') < 0, 'T27 观察器不重跑筛选行（那条路上有发站点请求的一步）');
 })();
-
-/* ---------- T28 组卷那一下：读老键、留下按下的条件、不一致要说一句（守：上面那些 T20 只数
-   字符串出现几次，把比对改成 `if (false)` 它照样绿——这里按原文切出那段处理器，逐项查）---------- */
 
 (function t28() {
   const at = raw.indexOf("$('#gth-start').addEventListener('click'");
@@ -913,21 +816,18 @@ async function t16() {
   });
 })();
 
-/* ---------- T29 「清理残留」的两份判据（守的是删数据那一面：可自愈的那代进度被列进去就是丢用户进度，
-   别的 ctx 的在用库被列进去就是丢另一班次的全部笔记与划线——两种都是不可恢复的误伤）---------- */
-
 (function t29() {
   const m = build();
   const bothNow = m.srcLabel(['error', 'favorite']);
-  // 现版本能算出的键：按日期、按科目、只勾模考、练习题＋模考混合
+
   const cur = [
     m.SRC_NAME.error + ' · 日期：全部|asc',
     bothNow + ' · 行政职业能力测试（资料分析）|desc',
     m.SRC_NAME.mock + '（全部模考题）|asc',
     m.SRC_NAME.error + ' · 日期：本周 ＋ ' + m.SRC_NAME.mock + '（全部模考题）|asc'
   ];
-  const healable = m.SRC_NAME.both + ' · 日期：全部|asc';   // 「错题+收藏 · 」那一代，1.10.2 会自愈搬走
-  const ancient = '行政职业能力测试（资料分析）|asc';         // 来源还没进描述那一代，归因不了
+  const healable = m.SRC_NAME.both + ' · 日期：全部|asc';
+  const ancient = '行政职业能力测试（资料分析）|asc';
 
   (function () {
     const r = {};
@@ -962,9 +862,6 @@ async function t16() {
     'T29 夹着一个在用库时，两个孤儿照样被挑出来、在用的留下');
 })();
 
-/* ---------- T30 两颗按钮的函数体不是空壳（守：T20 只数「绑上了处理器」，把处理器里面掏空它照样绿。
-   这里按原文切出那两段，逐项查真做了该做的事）---------- */
-
 (function t30() {
   function slice(a, b) {
     const at = raw.indexOf(a);
@@ -994,8 +891,6 @@ async function t16() {
     ['saveStore();', 'T30 删过 resume 就落盘，不然下一次写盘又把旧记录带回来']
   ].forEach(function (p) { ok(clean && clean.indexOf(p[0]) >= 0, 'T30 ' + p[1]); });
 })();
-
-/* ---------- 跑起来 ---------- */
 
 (async function main() {
   await t45();

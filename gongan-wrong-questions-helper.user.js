@@ -26,7 +26,7 @@
 
   var CTX = location.pathname.split('/')[1] || 'mingshi';
   var API_BASE = 'https://pub.xdapi.top/' + CTX + '/api/v1/tiku/gongan/';
-  var API_V2 = 'https://pub.xdapi.top/' + CTX + '/api/v2/';   // 模考补题面走 v2（与站点同一接口）
+  var API_V2 = 'https://pub.xdapi.top/' + CTX + '/api/v2/';
   var LS_STORE = 'gongan_tiku_helper_' + CTX;
   var LS_TOKEN = 'token_gongan_' + CTX;
   var LS_LOGIN = 'login_status_' + CTX;
@@ -40,9 +40,6 @@
   var DAY_RANGES = [['0', '当天'], ['1', '本周'], ['2', '本月'], ['3', '近三月'], ['4', '全部']];
   var MASTER_STREAK = 2;
 
-  /* 带 click 的 div / span：键盘本来完全到不了它们。这一份是唯一出处——下面的焦点环 CSS 由它生成，
-     判据 T24 也拿它回脚本里核对类名，为的是「界面类名改了、这份没跟着改」那种界面上看不出的漂移。
-     名单里不放真 <button>（.gth-tabs button / .gth-mini / .gth-qbar-btn 等），它们自带键盘。 */
   var KEYACT = '.gth-menu-item,.gth-chip,.gth-badge,.gth-aside-hl-t,.gth-aside-empty,.gth-balloon,' +
     '.gth-hlp-item .t,.gth-hlp-item .n,.gth-hlp-item .rm,.gthq-cell,.gthq-opt,mark.gth-hl,#gth-mock-btn';
 
@@ -58,7 +55,6 @@
     });
   }
 
-  // 取 <img> 的 src：站点题目区图片带真实 src，个别模板会写成 data-src
   function imgSrc(tag) {
     var m = /\s(?:src|data-src)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(tag);
     var url = (m && (m[1] || m[2] || m[3])) || '';
@@ -69,8 +65,6 @@
     return url;
   }
 
-  // HTML → 纯文本。keepImg 为真时把图片保留成 Markdown 图片语法 ![图片](地址)，
-  // 这样「复制题目」粘到别处（搜题 / 问 AI）时图片地址不会跟着标签一起被丢掉
   function htmlToText(s, keepImg) {
     var t = String(s == null ? '' : s)
       .replace(/<br\s*\/?>/gi, '\n')
@@ -101,7 +95,6 @@
       .replace(/<img\b([^>]*?)\sloading="lazy"/gi, '<img$1');
   }
 
-  // 复制到剪贴板：优先用 Clipboard API，失败（非安全上下文 / 未授权）时回退到 execCommand
   function copyText(text) {
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -123,7 +116,6 @@
     } catch (e) { return false; }
   }
 
-  // 组装一道题的纯文本（题干 + 材料 + 选项 + 解析），便于用户复制到别处搜题问答。
   function copyQuestion(q) {
     var lines = [];
     lines.push(htmlToText(q.content || '', true));
@@ -218,23 +210,20 @@
     if (!data.notes) data.notes = {};
     if (!data.mastered) data.mastered = {};
     if (!data.wrongCount) data.wrongCount = {};
-    if (!data.exported) data.exported = {};   // 已导出过的题目 id，用于增量导出
-    if (!data.history) data.history = [];     // 最近三次组卷记录
-    if (!data.resume) data.resume = {};       // 顺序刷题进度：筛选键 -> 已刷到第几题
-    if (!data.highlights) data.highlights = {}; // 题目 id -> [{quote,prefix,nth,block,color,at,snap,subject,lost}]
-    if (!data.mockQs) data.mockQs = {};       // 全真模考收录的题目快照：题目 id -> 归一化题目
-    if (!data.mocks) data.mocks = {};         // 模考场次登记：场次 id -> {at, processed:{qid:1}}
-    if (!data.practiced) data.practiced = {}; // 重练交卷登记：题目 id -> {at, n}，随机组卷靠它认「尚未重练」
-    if (!data.qModule) data.qModule = {};     // 题目 id -> 行测模块名
-    migrateExported(data);                    // 增量导出基线：按来源分桶
-    var hlLostCleared = migrateHlLost(data);  // 撤掉误判的「划线已失效」，见函数上的说明
+    if (!data.exported) data.exported = {};
+    if (!data.history) data.history = [];
+    if (!data.resume) data.resume = {};
+    if (!data.highlights) data.highlights = {};
+    if (!data.mockQs) data.mockQs = {};
+    if (!data.mocks) data.mocks = {};
+    if (!data.practiced) data.practiced = {};
+    if (!data.qModule) data.qModule = {};
+    migrateExported(data);
+    var hlLostCleared = migrateHlLost(data);
     if (hlLostCleared) console.log('[错题助手] 已撤掉 ' + hlLostCleared + ' 条误判的「划线已失效」标记');
     return data;
   })();
 
-  // 增量导出基线按「来源」分桶：错题本 / 收藏夹 / 两者合并各记一份。
-  // 同一道题可能同时出现在错题本和收藏夹，共用一份基线会让另一边漏掉「新增」。
-  // 没有 `_v: 2` 标记的那份基线是扁平的 id 字典，一律并进「错题本」桶；旧备份文件也要能迁移，所以这段要可重复执行。
   function migrateExported(data) {
     var ex = data.exported;
     if (!ex || typeof ex !== 'object' || Array.isArray(ex) || ex._v !== 2) {
@@ -244,7 +233,7 @@
       }
       data.exported = { _v: 2, error: conv, favorite: {}, both: {}, mock: {} };
     }
-    // 已是 _v:2 的存量数据补上模考桶（模考收录是后加的来源，旧库没这个键）
+
     if (!data.exported.mock) data.exported.mock = {};
     var at = data.exportAt;
     if (!at || typeof at !== 'object') {
@@ -255,11 +244,6 @@
     return data;
   }
 
-  /* 站点收起解析时 .analysis 里没有正文，解析区的划线定位不到就被判成失效，`lost` 写进了库。
-     读这个标记的有四处：划线行的删除线、「再点同色取消」跳过它、页边的「N 条已失效」，
-     以及一键整理写进笔记的「原文已变更，未能重新定位」——最后那条会跟着用户导出的文件走。
-     这里把解析区的失效标记一律撤掉，交给 paintRoot 在解析真的渲染着的时候重判（判得回来，所以不丢东西）。
-     非解析区的 lost 不动：那批是在文本确实可见时连着两次定位失败判出来的，是真信号。 */
   function washHlLost(highlights) {
     var n = 0;
     Object.keys(highlights || {}).forEach(function (qid) {
@@ -272,19 +256,12 @@
     return n;
   }
 
-  /* 库初始化只洗一次并留标记：每次加载都洗的话，重判出来的真失效会在下一次打开时被抹掉，
-     用户看到的就是「失效 → 刷新 → 又不失效 → 展开解析 → 又失效」的闪。
-     恢复备份走的是另一条路（restoreJson 直接调 washHlLost）：旧备份里的 lost 多半就是误判的那批。 */
   function migrateHlLost(data) {
     if (data.hlLostMigrated) return 0;
     data.hlLostMigrated = 1;
     return washHlLost(data.highlights);
   }
 
-  // 一个浏览器里可能同时开着多个跑这份脚本的标签（或新旧版本并存）。saveStore 是整库回写，
-  // 谁的内存快照旧，谁就把别人刚写的数据擦掉——实测踩过：模考刚收完 49 题，另一个标签一保存就全没了。
-  // 所以写盘前重读磁盘，只并入「只增」的几块：模考快照、场次幂等账本、答错次数、重练登记、模块映射。
-  // notes / highlights 故意不并：它们带删除语义，naive 合并会把用户删掉的东西救回来。
   function mergeConcurrent(data) {
     var fresh;
     try { fresh = JSON.parse(localStorage.getItem(LS_STORE) || ''); } catch (e) { return data; }
@@ -308,7 +285,6 @@
     var wc = data.wrongCount || (data.wrongCount = {}), fwc = fresh.wrongCount || {};
     Object.keys(fwc).forEach(function (k) { if ((wc[k] || 0) < (fwc[k] || 0)) wc[k] = fwc[k]; });
 
-    // 重练登记按次数取大（不比时间戳），模块映射先到先得——同一题的模块名不会自相矛盾
     var pr = data.practiced || (data.practiced = {}), fpr = fresh.practiced || {};
     Object.keys(fpr).forEach(function (k) {
       var a = pr[k], b = fpr[k];
@@ -320,10 +296,6 @@
     return data;
   }
 
-  /* 面板内容的重绘门：store 每写盘一次就 +1。观察器只在看这个数变化时重画面板，
-     不然站点每次 DOM 变更都要把组卷历史整段 innerHTML 重写一遍、监听重绑一遍——
-     面板里正展开的下拉和刚聚焦的控件会一起被抹掉。声明放在 saveStore 之前，
-     它只可能被更晚的顶层调用读到，但 var 的赋值不提升，位置就是契约。 */
   var storeRev = 0;
 
   function saveStore() {
@@ -332,11 +304,10 @@
     catch (e) { alert('本地存储写入失败：' + e.message); }
   }
 
-  // 别的标签写盘后先把它那批「只增」数据并进本标签内存，免得下一次保存又把它擦掉
   window.addEventListener('storage', function (e) {
     if (e.key !== LS_STORE || !e.newValue) return;
     mergeConcurrent(store);
-    storeRev++;   // 内存里的数据确实变了：面板要按同一扇门认这次，不然别的标签收的题进不来
+    storeRev++;
   });
 
   function setNote(id, text, opts) {
@@ -355,11 +326,6 @@
   }
   function getNote(id) { return (store.notes[id] && store.notes[id].text) || ''; }
 
-  /* ================= 划线：存锚点，不存 DOM =================
-     错题页的题目区由 AngularJS 的 ng-bind-html 渲染，翻页 / 切换 exam_type / 折叠解析
-     都会整块重绘，直接往 DOM 里塞 <mark> 会被冲掉。因此每条划线只记录
-     「原文 + 前置上下文 + 第几次出现」，页面每次重绘后按锚点重新落笔。 */
-
   var HL_LABEL = { yellow: '重点', red: '易错' };
   var HL_PREFIX_LEN = 12;
 
@@ -367,8 +333,6 @@
 
   function countHighlights(id) { return getHighlights(id).length; }
 
-  /* 该进笔记列表的题：写过笔记的，或一条划线都划了的（在解析页只划线不写字也得能找回来）。
-     笔记 tab 与「一键整理为笔记」共用这一条口径。 */
   function noteIdsWithHl() {
     var ids = Object.keys(store.notes);
     Object.keys(store.highlights).forEach(function (id) {
@@ -377,12 +341,6 @@
     return ids;
   }
 
-  /* 一条划线在列表里的那一行，三处共用：笔记面板 / 页边批注栏 / 重练题目。
-     noteTitle 是批注行的悬停提示，各处的措辞历来不同，所以由调用方给。 */
-  // 一行划线：dot / bd / rm 三段横排，原文与批注上下叠在 .bd 里（它带 flex:1;min-width:0，
-  // 是这一行里唯一可收缩的那块）。因此 .t 与 .n 的 parentNode 是 .bd 而不是本行，
-  // 取下标一律用 closest('.gth-hlp-item')——按 parentNode 拿到的 .bd 身上没有 data-hl，
-  // Number(undefined) 是 NaN，点着就是没反应
   function hlRowHtml(h, i, noteTitle) {
     return '<div class="gth-hlp-item' + (h.lost ? ' lost' : '') + '" data-hl="' + i + '">' +
       '<span class="dot ' + (h.color === 'red' ? 'red' : 'yellow') + '"></span>' +
@@ -393,7 +351,6 @@
       '<span class="rm" title="取消划线">' + icon('x') + '</span></div>';
   }
 
-  // 划中的文字落在题目的哪一块：靠「哪段源文本包含了这句话」判断，不依赖 DOM 结构
   function classifyBlock(item, quote) {
     if (!item || !quote) return 'other';
     var opt = item.opt;
@@ -407,7 +364,6 @@
     return 'other';
   }
 
-  // 题目对象来源有两个：错题页的 AngularJS scope，以及插件组卷的 quiz.list
   function questionOf(qid) {
     if (itemsById[qid]) return itemsById[qid];
     if (quiz && quiz.list) {
@@ -418,7 +374,6 @@
     return null;
   }
 
-  // 求某个节点 / 偏移在 root 纯文本中的字符下标
   function offsetInRoot(root, node, offset) {
     var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
     var acc = 0, n;
@@ -435,11 +390,8 @@
     return out;
   }
 
-  // 归一化：抹掉空白与标点，用于「站点文案微调」后的模糊匹配
-  // PUNCT_RE 不带 /g：带 /g 时 RegExp.test() 会把 lastIndex 往后挪，连续标点隔一个漏一个
   var PUNCT_RE = /[\s\u3000,.!?;:'"()（）【】《》、，。！？；：""''—\-–·]/;
 
-  // 归一化后的下标 -> 原文下标映射
   function normMap(s) {
     var map = [], out = '';
     s = String(s == null ? '' : s);
@@ -452,8 +404,6 @@
   }
   function norm(s) { return normMap(s).text; }
 
-  /* 在 root 里定位一条划线，返回 {start, end, fuzzy} 或 null。
-     先精确匹配（按 nth + 前置上下文），失败再模糊匹配。 */
   function locate(root, rec) {
     var full = root.textContent || '';
     if (!full || !rec.quote) return null;
@@ -462,7 +412,7 @@
     if (idxs.length) {
       if (idxs.length === 1) pick = idxs[0];
       else if (rec.nth >= 1 && rec.nth <= idxs.length) pick = idxs[rec.nth - 1];
-      // 第几次出现对不上时，用前置上下文救一次
+
       if (pick >= 0 && rec.prefix) {
         var ctx = full.slice(Math.max(0, pick - rec.prefix.length), pick);
         if (ctx !== rec.prefix) {
@@ -481,8 +431,6 @@
     return { start: s, end: e, fuzzy: true };
   }
 
-  // 把 [start,end) 字符区间内的文本节点包进 <mark>。只移动/切分文本节点，不新建内容，
-  // 因此不会破坏 AngularJS 持有的 Text 节点引用（ng-bind-html 区域本身也没有插值节点）
   function markRange(root, start, end, cls, idx) {
     var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
     var acc = 0, todo = [], n;
@@ -503,7 +451,7 @@
       var mk = document.createElement('mark');
       mk.className = 'gth-hl ' + cls;
       mk.dataset.gthHl = '1';
-      // 反查下标：点击这条划线时能知道它是 store.highlights[qid] 里的第几条
+
       if (idx != null) mk.dataset.gthI = String(idx);
       node.parentNode.insertBefore(mk, node);
       mk.appendChild(node);
@@ -512,7 +460,6 @@
     return made;
   }
 
-  // 落笔前先拆掉已有 mark，保证文本是「干净原文」，重绘才幂等
   function unwrapMarks(root) {
     $$('mark.gth-hl', root).forEach(function (m) {
       var p = m.parentNode;
@@ -522,16 +469,10 @@
     });
   }
 
-  /* 站点把解析做成「展开/收起」开关：收起时 item.analysis 被换成空串（正文在 analysis_shadow 里），
-     解析区的划线在收起态根本不在页面上。这种定位不到不是失效，得先不下结论——
-     把它记成 lost，删除线和「原文已变更，未能重新定位」会一路带进批注栏、重练界面和导出的笔记 */
   function hlHoldLost(rec, analysisShown) {
     return rec.block === 'analysis' && !analysisShown;
   }
 
-  /* 重画一道题的所有划线。签名机制同时有两个作用：
-     1) 幂等 —— 画完再被 MutationObserver 唤醒时直接跳过，避免无限重绘；
-     2) 感知变化 —— 题目文本长度变了（展开解析、换页）就重画。 */
   function paintRoot(root) {
     var qid = root.getAttribute('data-gth-qid');
     if (!qid || !root.isConnected) return;
@@ -539,22 +480,21 @@
     var len = (root.textContent || '').length;
     var sig = qid + '|' + list.length + '|' + len;
     if (root.getAttribute('data-gth-paint') === sig) return;
-    // 题目内容还没渲染出来（Angular 尚未 ng-bind-html、或正整块重绘）时不要落笔，
-    // 否则会把「还没渲染」误判成「划线失效」，还把这个误判写进本地存储
+
     if (list.length && len < 8) return;
 
     unwrapMarks(root);
     if (!list.length) { root.setAttribute('data-gth-paint', sig); return; }
     var painted = 0, changed = false, retry = false;
-    // 收起解析时站点的 .analysis 里只剩「解析」这个标题字，正文那个 <p> 才是有没有内容的答案
+
     var ap = $('.analysis p', root);
     var analysisShown = !!(ap && (ap.textContent || '').trim().length);
     list.forEach(function (rec, i) {
-      if (rec.edited) return;         // 手改过文本的划线只作笔记素材，不再往页面上画
+      if (rec.edited) return;
       var pos = locate(root, rec);
       if (!pos) {
         if (hlHoldLost(rec, analysisShown)) return;
-        // 连续两次定位失败才认定失效：单次失败多半是站点正在重绘，等下一次唤醒再试
+
         rec.miss = (rec.miss || 0) + 1;
         if (rec.miss >= 2) {
           if (!rec.lost) { rec.lost = true; changed = true; console.warn('[错题助手] 划线已失效：', qid, rec.quote); }
@@ -568,9 +508,7 @@
       if (markRange(root, pos.start, pos.end, rec.color === 'red' ? 'red' : 'yellow', i)) painted++;
     });
     if (changed) saveStore();
-    // 签名只跟「题目文本 + 划线条数」有关。用 list.length 而不是本次实画条数：
-    // 只要有一条 edited / 失效的划线，实画条数就永远对不上，观察器每个周期都会
-    // 拆了重画（划线闪烁、CPU 空转），这正是「划线看着失效」的来源之一
+
     root.setAttribute('data-gth-paint', retry ? '' : sig);
   }
 
@@ -578,16 +516,13 @@
     $$('[data-gth-qid]').forEach(paintRoot);
   }
 
-  // 一道题在 DOM 里的根节点；qid 可能被塞了引号，选择器里先剥掉
   function qRoot(qid) { return $('[data-gth-qid="' + String(qid).replace(/"/g, '') + '"]'); }
 
-  // 改完这一题的划线数据后让它重新落笔（抹掉 data-gth-paint，paintRoot 才认它是新节点）
   function repaintOne(qid) {
     var root = qRoot(qid);
     if (root) { root.removeAttribute('data-gth-paint'); paintRoot(root); }
   }
 
-  // 把已经渲染出来的批注栏全部重画；正在编辑某条批注的那一题先不动
   function rerenderAsides() {
     $$('.gth-aside').forEach(function (a) {
       var it = itemsById[a.dataset.id];
@@ -595,7 +530,6 @@
     });
   }
 
-  // 新增一条划线：由「选区起点在题目纯文本中的下标」反推 nth 与前置上下文
   function addHighlight(qid, quote, start, color) {
     var root = qRoot(qid);
     var full = root ? (root.textContent || '') : '';
@@ -631,8 +565,6 @@
     repaintOne(qid);
   }
 
-  /* ---- 划线的批注：Word 的模型是「批注锚定在文字上」，所以每条划线自带一条批注 ---- */
-
   function hlNoteSet(qid, idx, text) {
     var r = (store.highlights[qid] || [])[idx];
     if (!r) return;
@@ -641,7 +573,6 @@
     saveStore();
   }
 
-  // 取消划线：连同它挂着的批注一起删（Word 里删批注=撤掉高亮，两者同生共死）
   function hlRemove(qid, idx) {
     var list = store.highlights[qid];
     if (!list || idx < 0 || idx >= list.length) return;
@@ -651,7 +582,6 @@
     repaintOne(qid);
   }
 
-  // 选区 [s,e) 覆盖了哪些划线？用于「再点一次同色 = 取消」的 Word 式切换
   function hlOverlap(root, start, end, color) {
     var qid = root.getAttribute('data-gth-qid');
     var list = store.highlights[qid] || [];
@@ -661,7 +591,7 @@
       if (color && (rec.color === 'red' ? 'red' : 'yellow') !== color) return;
       var pos = locate(root, rec);
       if (!pos) return;
-      if (pos.start < end && pos.end > start) hit.push(i);   // 半开区间相交
+      if (pos.start < end && pos.end > start) hit.push(i);
     });
     return hit;
   }
@@ -674,7 +604,6 @@
   }
   function isMastered(id) { var m = store.mastered[id]; return !!m && m.streak >= MASTER_STREAK; }
 
-  /* 答错次数：优先读服务端字段（站点若返回），否则用本地累计 */
   var ERR_COUNT_KEYS = ['error_count', 'wrong_count', 'error_num', 'wrong_num',
     'error_times', 'wrong_times', 'err_count', 'wrong_cnt', 'error_cnt', 'errorcnt', 'count'];
 
@@ -686,9 +615,9 @@
     }
     return 0;
   }
-  // 能进错题本就说明至少已经错过一次，所以真实次数 = 本地累计 + 1
+
   var WRONG_BASE = 1;
-  var STUBBORN_MIN = 3;      // 达到这个次数标为红色「顽固错题」（含 3 次）
+  var STUBBORN_MIN = 3;
 
   function errCountOf(q) {
     var s = serverErrCount(q);
@@ -696,7 +625,6 @@
     return ((store.wrongCount && store.wrongCount[q.id]) || 0) + WRONG_BASE;
   }
 
-  // 答错次数标记：达到 STUBBORN_MIN 用红色醒目的「顽固错题」
   function errTag(n) {
     var hard = n >= STUBBORN_MIN;
     return {
@@ -705,12 +633,12 @@
         (hard ? '顽固错题 · ' + n + ' 次' : '答错 ' + n + ' 次')
     };
   }
-  // 交卷时累计本地答错次数（答错 +1）
+
   function bumpWrongCount(q, ok) {
     if (!store.wrongCount) store.wrongCount = {};
     if (!ok) store.wrongCount[q.id] = (store.wrongCount[q.id] || 0) + 1;
   }
-  // 「这题重练过」只在交卷时登记，与掌握度分开：收藏页手动打勾不算练过。
+
   function markPracticed(id) {
     if (!store.practiced) store.practiced = {};
     var r = store.practiced[id];
@@ -718,16 +646,13 @@
   }
   function isPracticed(id) { return !!(store.practiced && store.practiced[id]); }
 
-  var MOCK_UNCLS = '未分类';   // 模块这一维是后加的：更早收录的模考题没有它，统一落到这个桶
+  var MOCK_UNCLS = '未分类';
 
-  // 模块的唯一读入口：行测考点映射优先，其次模考收录里的 module
   function moduleOf(id) {
     return (store.qModule && store.qModule[id]) ||
       (store.mockQs[id] && store.mockQs[id].module) || '';
   }
-  /* 每题自带的 exam_point 是考点树里某个节点的 id，而脚本的「模块」= exampoint_list 的顶层节点。
-     把树走一遍记下「后代 → 所属顶层」，模块就能直接从列表响应推出来，
-     不必等「按科目 + 行测」逐个考点请求（实测：树 219 个节点，顶层 8 个模块名）。 */
+
   function buildExamPointIndex(list) {
     var byPoint = {};
     (list || []).forEach(function (c) {
@@ -741,13 +666,8 @@
     return byPoint;
   }
 
-  // fetchSubcategory 拿到考点表时填；没填之前列表里的 exam_point 一律不登记（不猜）
   var examPointModule = null;
 
-  /* 只认「这个 exam_point 在这棵考点树里」，不额外判科目：按日期那一趟是行测与公专混着返回的，
-     而列表项里没有可用的科目字段（实测 38 个键里只有 exam_type_id=6、type_id=1 这类，
-     不是站点的 0/1 科目）。公专的题会不会带一个落在行测考点树里的 id，本机没有公专错题、测不出来；
-     真撞上也不过是给那道题挂一个站点自己的考点名——比现在「按日期筛出来全无模块」更接近站点的口径。 */
   function rememberModulesFromPoints(list) {
     if (!examPointModule) return 0;
     var n = 0;
@@ -760,7 +680,6 @@
     return n;
   }
 
-  // 按考点逐个请求时顺手登记；同一题被多个考点返回时保留第一个（站点考点本身可重叠）
   function rememberModule(id, name) {
     if (!name) return false;
     if (!store.qModule) store.qModule = {};
@@ -769,7 +688,7 @@
     store.qModule[k] = name;
     return true;
   }
-  // 首次注入列表 UI 时打印一次题目字段清单，便于确认服务端是否带错误次数字段
+
   var probed = false;
   function probeFields(list) {
     if (!list || !list.length) return;
@@ -842,8 +761,6 @@
     return q;
   }
 
-  // 站点把解析做成「展开/收起」开关：加载时 analysis 被清空、内容转入 analysis_shadow，
-  // 点击后再换回来。所以解析始终只在这两个字段之一里，读单个字段必然拿到空串。
   function analysisOf(q) { return q.analysis || q.analysis_shadow || ''; }
 
   function ansKey(a) {
@@ -871,9 +788,6 @@
     return nextPage(0);
   }
 
-  // 行测的模块（知识点）位于 subcategory_list 的下一级 exampoint_list。
-  // 站点模板本身也只渲染这一级，其上层「试卷分类」在模板中已被注释掉。
-  // 同名模块可能同时挂在多个分类下，这里按名称合并为一组请求对。
   function buildModuleOptions(list) {
     var byName = {}, out = [];
     function add(name, pair) {
@@ -889,9 +803,6 @@
     return out;
   }
 
-  /* 行测按考点逐个拉题，错题与收藏共用一条流程，只差接口：
-     error/view 分页返回（要带 page），favorite/view 一次性返回（站点不吃分页参数）。
-     moduleNames 为空数组表示全部模块。 */
   function fetchXingceBy(kind, moduleNames, onProgress) {
     return fetchSubcategory().then(function (list) {
       var pairs = [];
@@ -953,15 +864,10 @@
     });
   }
 
-  /* ---------- 收藏夹：与错题本同构的第二条题目来源 ----------
-     站点两个列表用的是同一个 ng-repeat 表达式（item in subjectList），字段也一致，
-     接口只差路径：error/view 分页返回，favorite/view 一次性返回且没有分页参数。 */
-
   function listPath(kind, ci) {
     return 'content/' + ci.content_id + '/' + (kind === 'favorite' ? 'favorite/view' : 'error/view');
   }
 
-  // 收藏与错题的筛选参数一致：view_type 0=日期型、1=科目型
   function listParams(ci, f) {
     var base = { agency_commodity_id: ci.id, is_cal_totalitems: 1 };
     if (f.mode === 'date') {
@@ -981,8 +887,6 @@
     });
   }
 
-  // 行测的收藏同样要按考点逐个请求：content_type=0 时接口只认 subcategory/exampoint，
-  // 不传考点等于拿不到东西。
   function fetchFavoriteXingce(moduleNames, onProgress) {
     return fetchXingceBy('favorite', moduleNames, onProgress);
   }
@@ -996,7 +900,6 @@
     return fetchFavoriteFlat(f);
   }
 
-  // 来源统一成数组：多个来源取并集、同一道题只留一份；旧的单个 src 组卷历史（both = 错题本＋收藏夹）也在这里归一，不在调用方各写一遍
   function srcList(f) {
     var raw = (Array.isArray(f.srcs) && f.srcs.length) ? f.srcs : [f.src || 'error'];
     var out = [];
@@ -1012,7 +915,6 @@
     return srcList({ srcs: srcs }).map(function (s) { return SRC_NAME[s]; }).join('＋');
   }
 
-  // 勾掉的来源里还有没有站点来源：只有站点来源才谈得上日期 / 科目 / 行测模块
   function hasSiteSrc(srcs) {
     return srcList({ srcs: srcs }).some(function (s) { return s !== 'mock'; });
   }
@@ -1020,7 +922,7 @@
   function fetchByFilter(f, limit) {
     var srcs = srcList(f);
     var wantErr = srcs.indexOf('error') >= 0, wantFav = srcs.indexOf('favorite') >= 0;
-    var mods = f.mock_modules || [];   // 空数组 = 全部模考模块
+    var mods = f.mock_modules || [];
     var site = (!wantErr && !wantFav) ? Promise.resolve([])
       : (wantErr && wantFav) ? Promise.all([fetchErrors(f, limit), fetchFavorites(f)])
           .then(function (r) {
@@ -1035,13 +937,11 @@
       : wantErr ? fetchErrors(f, limit)
       : fetchFavorites(f);
     return site.then(function (list) {
-      // 按日期与收藏这两路原来一个模块都登记不上（只有逐个考点请求那条路会记）——
-      // 其实每题自带 exam_point，换名就行
+
       rememberModulesFromPoints(list);
       var have = {};
       list.forEach(function (q) { if (q && q.id != null) have[String(q.id)] = 1; });
-      // 模考成绩不进站点错题接口，错题本一向并上模考答错的题；勾了「模考收录」才把答对与未做的也带进来。
-      // 模考模块的勾选对两路都生效——没勾收录时那排 chips 不显示，也就不参与条件，免得留下看不见的筛选
+
       var mock = srcs.indexOf('mock') >= 0 ? mockAllList(mods)
         : (wantErr ? mockWrongList(mods) : []);
       return list.concat(mock.filter(function (q) { return !have[String(q.id)]; }));
@@ -1053,7 +953,7 @@
       .then(function (ci) { return apiGet('content/' + ci.content_id + '/subcategory'); })
       .then(function (d) {
         var list = d.subcategory_list || [];
-        examPointModule = buildExamPointIndex(list);   // 有了这张表，列表里的 exam_point 就能换成模块名
+        examPointModule = buildExamPointIndex(list);
         return list;
       });
   }
@@ -1193,7 +1093,7 @@
       return [
         i + 1,
         SUBJECT_NAME[q.content_type] || '',
-        q._mock ? '模考#' + q._mock : '练习',   // 来源：全真模考场次 / 站点练习
+        q._mock ? '模考#' + q._mock : '练习',
         stripHtml(q.material),
         stripHtml(q.content),
         (q.opt || []).map(function (o) { return o.label + '. ' + stripHtml(o.content); }).join('\n'),
@@ -1209,7 +1109,6 @@
     });
   }
 
-  // 导出用的划线摘要：按「[重点] 原文（批注：…）」逐条拼接
   function hlSummary(id) {
     return getHighlights(id).map(function (h) {
       return '[' + (HL_LABEL[h.color] || '重点') + '] ' + (h.quote || '') +
@@ -1290,16 +1189,16 @@
       exported: store.exported,
       exportAt: store.exportAt || 0,
       history: store.history || [],
-      mockQs: store.mockQs,       // 全真模考收录题目
-      mocks: store.mocks,         // 模考场次登记（含答错计数幂等键）
-      practiced: store.practiced, // 重练交卷登记
-      qModule: store.qModule      // 题目 id -> 行测模块名
+      mockQs: store.mockQs,
+      mocks: store.mocks,
+      practiced: store.practiced,
+      qModule: store.qModule
     };
     return new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
   }
 
   function exportNotesMarkdown(ids) {
-    // 笔记 tab 的列表里还有「只划线没写笔记」的题，导出笔记时按老规矩跳过它们
+
     ids = (ids || Object.keys(store.notes)).filter(function (id) {
       return store.notes[id] && store.notes[id].text;
     });
@@ -1327,7 +1226,7 @@
     if (j.highlights) { store.highlights = j.highlights; washHlLost(store.highlights); }
     if (j.mastered) store.mastered = j.mastered;
     if (j.wrongCount) store.wrongCount = j.wrongCount;
-    // 备份文件可能是分桶之前的扁平格式（`exported` 不带 `_v: 2`），统一迁移成按来源分桶
+
     if (j.exported) {
       var bak = migrateExported({ exported: j.exported, exportAt: j.exportAt });
       store.exported = bak.exported;
@@ -1357,40 +1256,31 @@
     '--gth-primary:#0f172a;--gth-primary-fg:#f8fafc;--gth-primary-hover:#1e293b;',
     '--gth-destructive:#dc2626;--gth-destructive-hover:#fef2f2;',
     '--gth-ring:rgba(148,163,184,0.45);--gth-success:#16a34a;',
-    // 控件高度与圆角只有一个出处：按钮、输入框、下拉必须同高，否则同一行里参差不齐
+
     '--gth-ctl-h:38px;--gth-ctl-r:10px;',
     '}',
 
     '.gth-ic{display:inline-flex;align-items:center;justify-content:center;width:1em;height:1em;line-height:1;color:currentColor}',
     '.gth-ic svg{width:100%;height:100%;display:block}',
 
-    /* 左侧菜单入口：尺寸/底色/字色完全沿用站点 .left-menu .item，只补激活态 */
     '.gth-menu-item{cursor:pointer}',
     '.gth-menu-item .text{display:inline-flex;align-items:center;gap:6px}',
     '.gth-menu-item .gth-ic{font-size:14px;opacity:.75}',
     '.gongan2-container .left-menu .item.gth-menu-item.active{background:#fff;font-weight:700}',
-    // 助手视图打开时压住原生项的激活底色。原生 active 由 AngularJS 的 ng-class 掌管，
-    // 直接摘它的 class 会与 ng-class 打架（表达式值未变就不会重加），因此只做视觉压制、不改状态
+
     'body.gth-view-on .left-menu .item.active:not(.gth-menu-item){background:#f8f8f8}',
 
-    /* 助手视图：作为 .right-content 的原生同级节点，与站点 .inner-content 互斥显示。
-       下内边距只留 8px：站点 .right-content 自己带 padding:20px 0，再叠 40px 就是一大片没人认领的空白 */
     '.gth-hide{display:none!important}',
     '.gth-view{padding:0 20px 8px;box-sizing:border-box;',
     'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;',
     'font-size:13px;color:var(--gth-fg)}',
     '.gth-view[hidden]{display:none}',
-    // 带 hidden 的元素一律要真的消失：.gth-row 这类作者级 display 压过 UA 的 [hidden]{display:none}，el.hidden = true 只管属性不管渲染
+
     '.gth-view [hidden]{display:none !important}',
 
-    /* 笔记批注轨道：.content 保持自身滚动（站点原生行为），轨道用 position:fixed
-       镜像它的视口位置，内部再按 scrollTop 反向平移，从而把批注栏落在容器右侧的空白页边距里。
-       纯 CSS 做不到——浏览器会把「一轴 clip + 另一轴 scroll」降级为 hidden，overflow-clip-margin 失效。 */
-    // 用子选择器限定：题目区里也有 .content（题干那层），别给它加定位上下文
     'body.gth-error .right-content .inner-content>.content{position:relative}',
     '.gth-rail{position:fixed;overflow:hidden;pointer-events:none;z-index:50;',
-    // 这里的 clamp 只是 JS 还没跑之前的兜底；真正生效的宽度由 syncRail 按可视区现算，
-    // 因为可用空间取决于内容区右缘在哪，CSS 算不出来
+
     'width:clamp(160px,calc((100vw - 1000px) / 2 - 24px),280px);',
     'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif}',
     '.gth-rail[hidden]{display:none}',
@@ -1414,7 +1304,6 @@
     '.gth-mini.primary{background:#f59e0b;border-color:#f59e0b;color:#fff}',
     '.gth-mini.primary:hover{background:#d97706;border-color:#d97706}',
 
-    /* 子分类 / 模块 两级多选 chips */
     '.gth-chiprow{display:flex;align-items:flex-start;gap:8px;margin-bottom:8px}',
     '.gth-chiplabel{color:var(--gth-muted);font-size:12px;min-width:28px;padding-top:7px;flex:0 0 auto}',
     '.gth-chips{display:flex;flex-wrap:wrap;gap:6px;flex:1;min-width:0}',
@@ -1427,7 +1316,6 @@
     '.gth-chips-empty{font-size:12px;color:var(--gth-muted);padding:5px 0 10px}',
     '.gth-chip .n{font-weight:600;font-size:11px;opacity:.65;margin-left:2px}',
 
-    /* 来源多选下拉：点按钮开合，菜单里是勾选框。用 absolute 挂在按钮下方 */
     '.gth-dd{position:relative;display:inline-block}',
     '.gth-dd-btn{display:inline-flex;align-items:center;gap:6px;cursor:pointer;text-align:left;',
     'min-width:132px;white-space:nowrap}',
@@ -1441,7 +1329,6 @@
     '.gth-dd-opt:hover{background:var(--gth-hover)}',
     '.gth-dd-opt input{width:15px;height:15px;margin:0;accent-color:var(--gth-primary);cursor:pointer}',
 
-    /* 答错次数标记 */
     '.gth-err{display:inline-flex;align-items:center;gap:3px;font-size:11px;padding:2px 8px;border-radius:10px;',
     'background:var(--gth-subtle);color:var(--gth-muted)}',
     '.gth-err.stubborn{background:#dc2626;color:#fff;font-weight:600}',
@@ -1465,24 +1352,21 @@
     '.gth-hint{color:var(--gth-muted);font-size:12px;line-height:1.6;margin:2px 0 12px}',
     '.gth-sep{height:1px;background:var(--gth-border);margin:14px 0}',
 
-    /* 收尾的「本地数据」块：原先是一条通栏 hairline + 三颗最小档按钮 + 一行说明，底下还空 60px；
-       成组之后这块地方有主了，空白变成这一节的呼吸而不是没写完的面板 */
     '.gth-data{margin-top:24px;padding:14px 16px 13px;border:1px solid var(--gth-border);',
     'border-radius:12px;background:var(--gth-subtle)}',
     '.gth-data .gth-sub{margin:0 0 11px}',
-    // 浅底上 --gth-muted 只剩 4.5:1，压到 slate-600 才回到 7:1
+
     '.gth-data .gth-hint{margin:11px 0 0;color:#475569}',
     '.gth-data-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}',
     '.gth-data-row .sp{flex:1}',
-    /* 按钮右上角的小问号：说明全文只待在这段的 title 里，按钮本体保持短语——
-       长句写进按钮文字会把那一排撑成两三行。cursor:help 表示这里只是说明，不是又一个动作 */
+
     '.gth-q{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;',
     '  width:14px;height:14px;margin-left:5px;border:1px solid var(--gth-border-strong);border-radius:50%;',
     '  font-size:9px;font-weight:700;color:var(--gth-muted);vertical-align:2px;cursor:help}',
     '.gth-btn:hover .gth-q{color:var(--gth-primary)}',
-    // 增量导出的两个计数并到一行，「重置增量基线」紧跟着它解释的那两个数，不再甩到 600px 外的右边缘
+
     '.gth-export-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}',
-    // 没载入过题目时 #gth-count 是空的：0 宽的项照样吃一份 gap，会把整行推歪
+
     '.gth-export-meta .gth-notes-meta:empty{display:none}',
 
     '.gth-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;',
@@ -1503,12 +1387,10 @@
     '.gth-btn.sm{height:32px;padding:0 12px;font-size:12px;gap:5px}',
     '.gth-btn .gth-ic{font-size:15px}',
 
-    // 键盘焦点：这些是真 <button>，此前只有 .gth-btn 有环，其余落到 UA 默认（浅色底上几乎看不见）
     '.gth-tabs button:focus-visible,.gth-mini:focus-visible,.gth-qbar-btn:focus-visible,',
     '.gth-his-item button:focus-visible,.gth-dd-opt:focus-within{',
     'outline:2px solid var(--gth-ring);outline-offset:2px}',
-    // 名单里那些 div / span 现在也能聚焦了，没环就等于看不见光标落在哪。环从 KEYACT 生成，
-    // 不另写一份选择器——两份名单迟早漂开
+
     KEYACT.split(',').map(function (s) { return s.trim() + ':focus-visible'; }).join(',') + '{',
     'outline:2px solid var(--gth-ring);outline-offset:2px}',
 
@@ -1527,16 +1409,14 @@
     '#gth-status.err{background:#fef2f2;color:#b91c1c;border-color:#fecaca}',
     '#gth-status.ok{background:#f0fdf4;color:#15803d;border-color:#bbf7d0}',
 
-    // 操作条挂在题目内容之上（ng-repeat 节点的第一个子节点）。左内边距 40px = 站点
-    // .sequence 的宽度，让操作条与题干左对齐
     '.gth-qbar{display:flex;align-items:center;gap:8px;margin:12px 0 0;padding:0 0 8px 40px}',
     '.gth-qbar [hidden]{display:none!important}',
-    // 操作条上的按钮：挨着答错次数 / 掌握状态徽章，与 shadcn 节奏一致
+
     '.gth-qbar-btn{display:inline-flex;align-items:center;gap:3px;height:24px;padding:0 8px;font-size:11px;',
     'border:1px solid var(--gth-border);border-radius:6px;background:var(--gth-bg);color:var(--gth-muted);cursor:pointer}',
     '.gth-qbar-btn:hover{background:var(--gth-hover);color:var(--gth-fg)}',
     '.gth-qbar-copy.copied{color:#16a34a;border-color:#bbf7d0;background:#f0fdf4}',
-    // 掌握状态徽章可点：点一下在「未掌握 / 已掌握」之间切
+
     '.gth-badge{font-size:11px;color:var(--gth-muted);display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:10px;',
     'background:var(--gth-subtle);cursor:pointer;user-select:none;transition:background .15s,color .15s}',
     '.gth-badge:hover{background:var(--gth-hover);color:var(--gth-fg)}',
@@ -1544,7 +1424,6 @@
     '.gth-badge.ghost{color:#94a3b8;background:transparent;box-shadow:inset 0 0 0 1px var(--gth-border)}',
     '.gth-badge.has{color:#a16207;background:#fffbeb}',
 
-    /* 组卷历史 */
     '.gth-sub{font-size:12px;font-weight:600;color:var(--gth-fg);margin:0 0 8px}',
     '.gth-his{display:flex;flex-direction:column;gap:8px}',
     '.gth-his-item{display:flex;align-items:center;gap:10px;border:1px solid var(--gth-border);border-radius:8px;',
@@ -1601,8 +1480,7 @@
     '.gthq-opt:hover{border-color:var(--gth-border-strong);background:var(--gth-subtle)}',
     '.gthq-opt.sel{border-color:var(--gth-primary);background:var(--gth-primary);color:var(--gth-primary-fg)}',
     '.gthq-opt .lb{font-weight:600;min-width:22px}',
-    // 题目区图片默认行内（display:inline-block），让「如图 <img> 所示」这类图文混排中的插图
-    // 落在文字之间，而不是被强制换行单独成行；大图受 max-width:100% 限制，放不下时自然回落到独立一行
+
     '.gthq-opt img,.gthq-stem img,.gthq-material img,.gthq-analysis img,.gth-note-text img{max-width:100%;height:auto;display:inline-block;vertical-align:middle;margin:2px 0;border-radius:6px}',
     '.gthq-tip{color:var(--gth-muted);font-size:12px;margin:10px 0;display:inline-flex;align-items:center;gap:6px;',
     'padding:4px 10px;background:var(--gth-subtle);border-radius:14px;border:1px solid var(--gth-border)}',
@@ -1633,12 +1511,10 @@
     '.gthq-notebox textarea{width:100%;min-height:60px;border:1px solid var(--gth-border);border-radius:8px;',
     'padding:8px;font-size:13px;resize:vertical;box-sizing:border-box;font-family:inherit;background:var(--gth-bg)}',
 
-    /* ---- 划线 ---- */
     'mark.gth-hl{background:transparent;color:inherit;border-radius:2px;padding:0 1px}',
     'mark.gth-hl.yellow{background:#fde68a;box-shadow:inset 0 -2px 0 #f59e0b}',
     'mark.gth-hl.red{background:#fecaca;box-shadow:inset 0 -2px 0 #dc2626}',
 
-    /* 选中即现的浮动工具条。用 fixed + 视口坐标，避免受站点内部滚动容器影响 */
     '#gth-hlbar{position:fixed;z-index:100001;display:none;align-items:center;gap:2px;padding:4px;',
     'background:var(--gth-bg);border:1px solid var(--gth-border);border-radius:10px;',
     'box-shadow:0 6px 20px rgba(15,23,42,.16);',
@@ -1659,20 +1535,16 @@
     'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif}',
     '#gth-toast.on{opacity:1;transform:translateX(-50%) translateY(0)}',
 
-    /* 批注栏里的划线清单：内联展开，不用浮层——轨道容器 overflow:hidden 会裁掉浮层 */
     '.gth-aside-hl{margin-top:6px;border-top:1px dashed #fde68a;padding-top:6px}',
     '.gth-aside-hl-t{display:flex;align-items:center;gap:5px;font-size:11px;color:#a16207;cursor:pointer;user-select:none}',
     '.gth-aside-hl-t .gth-ic{font-size:12px;flex:0 0 auto}',
     '.gth-aside-hl-t .sp{flex:1}',
-    // 类名必须带 gth- 前缀：这个页面加载了 bootstrap 3.3.7，它有一个全局 .caret
-    // {width:0;height:0;border-top:4px solid;border-right/left:4px transparent}，
-    // 用 border 画一个实心向下三角形。我们只覆盖了 width/height，碰不到 border-*，
-    // 所以那个三角形会叠在自己的 Lucide 箭头下面——看着就是「两个图标重叠」
+
     '.gth-aside-hl-t .gth-caret{flex:0 0 auto;width:12px;height:12px;display:inline-flex;',
     'align-items:center;justify-content:center;opacity:.7;transition:transform .15s}',
     '.gth-aside-hl-list{margin-top:5px;display:none;flex-direction:column;gap:5px}',
     '.gth-aside-hl-list.on{display:flex}',
-    // 展开态只记在清单自己身上，箭头朝向由它派生，省掉一处 JS 写文案
+
     '.gth-aside-hl:has(.gth-aside-hl-list.on) .gth-caret{transform:rotate(180deg)}',
     '.gth-hlp-item{display:flex;align-items:flex-start;gap:6px;font-size:11px;line-height:1.6;',
     'background:#fff;border:1px solid #fde68a;border-radius:6px;padding:5px 7px}',
@@ -1686,7 +1558,6 @@
     '.gth-hlp-empty{font-size:11px;color:#a16207;opacity:.7}',
     '.gth-aside-hl-act{margin-top:6px;display:flex;gap:6px}',
 
-    /* 一键整理面板 */
     '#gth-collect{position:fixed;inset:0;z-index:100002;background:rgba(15,23,42,.45);',
     'display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box}',
     '#gth-collect[hidden]{display:none}',
@@ -1706,7 +1577,6 @@
     '.gthc-f{display:flex;gap:8px;align-items:center;padding:12px 18px;border-top:1px solid var(--gth-border)}',
     '.gthc-f .sp{flex:1}',
 
-    /* ---- 划线的批注（Word 式） ---- */
     '#gth-hlbar .dot,#gth-hlmenu .dot,#gth-hlnote .dot,.gth-balloon-h .dot{width:9px;height:9px;',
     'border-radius:50%;display:inline-block;flex:0 0 auto}',
     '#gth-hlmenu .dot.yellow,#gth-hlnote .dot.yellow,.gth-balloon-h .dot.yellow{background:#f59e0b}',
@@ -1755,7 +1625,6 @@
     '.gth-hln-f{display:flex;align-items:center;gap:6px;padding:9px 12px}',
     '.gth-hln-f .sp{flex:1}',
 
-    /* 右侧页边距的批注气球：锚定到划线所在行，Word 批注的观感 */
     '.gth-balloon{position:absolute;left:0;width:100%;box-sizing:border-box;pointer-events:auto;',
     'border:1px solid var(--gth-border);border-left:3px solid #fcd34d;border-radius:8px;background:#fffbeb;',
     'padding:7px 9px;font-size:11px;line-height:1.65;color:#713f12;cursor:pointer}',
@@ -1768,7 +1637,6 @@
     '.gth-balloon-b{white-space:pre-wrap;word-break:break-word;color:var(--gth-fg);font-size:12px}'
   ].join(''));
 
-  // 助手视图：先挂在 body 上以便立即绑定事件，注入时再整体移入 .right-content
   var viewEl = document.createElement('div');
   viewEl.className = 'gth-view zero-flex-1';
   viewEl.hidden = true;
@@ -1782,7 +1650,6 @@
     '  </div>',
     '  <div class="gth-body">',
 
-    // ---- 共用筛选区（导出 / 重练两个 pane 的；笔记 pane 用自己那一排）----
     '    <div id="gth-shared">',
     '      <div class="gth-row" id="gth-src-row">',
     '        <label>来源</label>',
@@ -1825,7 +1692,6 @@
     '      </div>',
     '    </div>',
 
-    // ---- 导出 ----
     '    <div data-pane="export">',
     '      <div class="gth-row">',
     '        <select id="gth-fmt" class="gth-select">',
@@ -1844,12 +1710,11 @@
     '      <div class="gth-hint">首次导出会自动按当前来源与筛选载入题目</div>',
     '    </div>',
 
-    // ---- 重练 ----
     '    <div data-pane="practice" hidden>',
     '      <div class="gth-row">',
     '        <label>来源</label>',
     '        <div class="gth-dd" id="gth-src-dd">',
-    // 复用 .gth-select 的背景箭头，别再加一个 svg，否则两只箭头叠在一起
+
     '          <button type="button" class="gth-select gth-dd-btn" id="gth-src-dd-btn">',
     '            <span id="gth-src-dd-label">错题本</span></button>',
     '          <div class="gth-dd-menu" id="gth-src-dd-menu" hidden>',
@@ -1877,7 +1742,6 @@
     '      <div id="gth-history" class="gth-his"></div>',
     '    </div>',
 
-    // ---- 笔记 ----
     '    <div data-pane="notes" hidden>',
     '      <div class="gth-notes-search">',
     '        <span class="ic-l">' + icon('search') + '</span>',
@@ -1939,7 +1803,6 @@
   ].join('');
   document.body.appendChild(viewEl);
 
-  // 批注轨道：脱离题目滚动容器，靠 JS 镜像其位置并跟随 scrollTop
   var railEl = document.createElement('div');
   railEl.id = 'gth-rail';
   railEl.className = 'gth-rail';
@@ -1956,9 +1819,6 @@
     statusEl.className = kind || '';
   }
 
-  /* 拉题 / 组卷是几十秒级的异步活。按钮不置灰的话，用户看着界面没动就再点一次，
-     同一批题就被并发拉两遍（模考那条路有 mockCollecting 挡着，导出与组卷这两条原来没有）。
-     用两段 then 而不是 finally：这份脚本通篇不依赖新式 API。 */
   function busy(btn, p) {
     if (!btn) return p;
     btn.disabled = true;
@@ -1966,23 +1826,19 @@
                   function (e) { btn.disabled = false; throw e; });
   }
 
-  // 选中的行测模块名；空数组表示「全部模块」
   var selectedModules = [];
   var moduleList = [];
-  /* 行测模块表的取题门：modulesLoading 挡住同一次里的并发，modulesLoaded 挡住「站点返回空表」
-     时反复重发。失败不置 loaded，所以下一次用户动作（切科目、开面板）还会重试——
-     这两个门是必要的，因为观察器一度每次站点重绘都跑一遍 syncFilterUI。 */
+
   var modulesLoading = false;
   var modulesLoaded = false;
-  // 重练面板勾选的来源（导出面板仍用 #gth-src 单选），以及模考模块勾选
+
   var practiceSrcs = ['error'];
   var practiceSrcTouched = false;
   var selectedMockModules = [];
 
-  var SRC_KEYS = ['error', 'favorite', 'mock'];   // both 不在其中：它只是导出单选里的历史值，由 srcList 展开
+  var SRC_KEYS = ['error', 'favorite', 'mock'];
   var SRC_NAME = { error: '错题本', favorite: '收藏夹', both: '错题+收藏', mock: '模考收录' };
 
-  // 来源写进描述里：刷题进度 resumeKey 与组卷历史都靠这串字区分条件
   function filterDesc(f) {
     var srcs = srcList(f);
     var parts = [];
@@ -1991,7 +1847,7 @@
       parts.push(srcLabel(site) + ' · ' +
         (f.mode === 'date' ? '日期：' + dayLabel(f.dayRange) : subjectDesc(f)));
     }
-    // 模考题没有科目也没有日期（站点接口不提供），唯一能筛的维度是模块
+
     if (srcs.indexOf('mock') >= 0) {
       var mods = f.mock_modules || [];
       parts.push(SRC_NAME.mock + (mods.length ? '（' + mods.join('、') + '）' : '（全部模考题）'));
@@ -2025,7 +1881,6 @@
     return f;
   }
 
-  // 两组模块 chips（行测考点来自站点接口，模考考点来自本地收录）共用同一套渲染与交互
   function chipsHtml(items, sel) {
     var allOn = sel.length === 0;
     var html = '<div class="gth-chip' + (allOn ? ' on' : '') + '" data-idx="-1">' +
@@ -2071,7 +1926,7 @@
     var box = $('#gth-mock-chips');
     if (!box) return;
     var items = mockModuleOptions();
-    // 先剪掉不再存在的勾选（收录被清空时也要剪），否则残留的模块名会变成看不见的筛选
+
     var names = items.map(function (m) { return m.name; });
     for (var i = selectedMockModules.length - 1; i >= 0; i--) {
       if (names.indexOf(selectedMockModules[i]) < 0) selectedMockModules.splice(i, 1);
@@ -2096,7 +1951,7 @@
     $('#gth-src-row').hidden = pane === 'practice';
     var srcs = srcList({ srcs: pane === 'practice' ? practiceSrcs : [currentSrc()] });
     var siteOn = hasSiteSrc(pane === 'practice' ? practiceSrcs : [currentSrc()]);
-    // 只勾模考收录时，日期 / 科目 / 行测模块都不参与取题，收起来——摆着能点却不生效就是「看着能筛其实无效」
+
     $('#gth-scope-row').hidden = !siteOn;
     $('.gth-date-only').hidden = !(siteOn && mode === 'date');
     $('.gth-subject-only').hidden = !(siteOn && mode === 'subject');
@@ -2114,19 +1969,17 @@
       modulesLoading = false;
       modulesLoaded = true;
       moduleList = buildModuleOptions(list);
-      // 结构诊断：若模块 chips 仍非预期，可据此定位真实层级
+
       console.log('[错题助手] 行测模块：', moduleList.map(function (m) { return m.name; }),
         '｜原始 subcategory_list：', list.map(function (c) {
           return c.name + ' × ' + (c.exampoint_list || []).length;
         }).join(' / '));
       renderModChips();
     }).catch(function (e) {
-      modulesLoading = false;   // 失败不置 modulesLoaded：下一次用户动作还会再取
+      modulesLoading = false;
       setStatus('行测模块加载失败：' + e.message, 'err');
     });
   }
-
-  /* ---------- 重练面板的来源多选：勾选式下拉，选中态存在 practiceSrcs ---------- */
 
   function renderPracticeSrc() {
     var label = $('#gth-src-dd-label');
@@ -2149,7 +2002,7 @@
     var menu = $('#gth-src-dd-menu');
     menu.hidden = !menu.hidden;
   });
-  // 点下拉外面就收起：菜单是绝对定位的浮层，不收会压住下面的组卷历史
+
   document.addEventListener('click', function (e) {
     var dd = $('#gth-src-dd'), menu = $('#gth-src-dd-menu');
     if (dd && menu && !menu.hidden && !dd.contains(e.target)) menu.hidden = true;
@@ -2168,12 +2021,9 @@
     });
   });
 
-  /* ---------- 笔记 tab 自己的筛选条：数据全在本地，套不上站点那套来源/范围 ---------- */
-
   var notesFilter = { subj: '', mod: '', src: '', mast: '', cont: '' };
-  var notesShownIds = [];   // 上一次渲染实际列出的题目 id，「一键整理 / 导出笔记」跟着它走
+  var notesShownIds = [];
 
-  // 列表被收窄过没有——关键词框也算，否则「搜一个不匹配的词再点一键整理」会去整理全部
   function notesNarrowed() {
     return !!(notesFilter.subj || notesFilter.mod || notesFilter.src ||
       notesFilter.mast || notesFilter.cont || notesSearchKey.trim());
@@ -2192,7 +2042,6 @@
     return l === '已掌握' ? 'done' : (l.indexOf('待巩固') === 0 ? 'dyn' : 'un');
   }
 
-  // 一条笔记（或一组划线）在本地能查到的全部筛选维度，缺的都落到「未记录」
   function noteFacets(id) {
     var n = store.notes[id] || {};
     var hls = getHighlights(id);
@@ -2218,7 +2067,6 @@
     return true;
   }
 
-  // 模块下拉的候选从这批笔记题的模块里来，而不是站点的考点表：只列真筛得出东西的值
   function renderNoteFilterMods(ids) {
     var sel = $('#gth-nf-mod');
     if (!sel) return;
@@ -2234,8 +2082,7 @@
       (hasUnknown ? '<option value="' + esc(MOCK_UNCLS) + '">模块未记录</option>' : '');
     sel.value = notesFilter.mod;
     notesFilter.mod = sel.value;
-    // 这一维要靠「按科目 + 行测」拉过一次题才登记得上。有笔记却一条模块都没有时，
-    // 下拉里只有「全部模块 / 模块未记录」两项——不说清就是「看着能筛，其实筛不出东西」
+
     setIf($('#gth-nf-mod-hint'), 'hidden', !ids.length || Object.keys(names).length > 0);
   }
 
@@ -2243,13 +2090,9 @@
     $('#' + id).addEventListener('change', function () { readNotesFilter(); renderNotesList(); });
   });
 
-  /* ---------- 入口：注入到左侧菜单「公安专业知识」下方，并作为原生视图切换 ---------- */
-
   var viewOn = false;
-  var panelRev = -1;   // 面板内容最后一次画的是哪个 storeRev；-1 = 还没画过
+  var panelRev = -1;
 
-  // 助手生效的路由：错题页（#/error）与收藏页（#/shoucang）。两页模板同构，
-  // 左侧菜单同样是「日期 / 行政职业能力测试 / 公安专业知识」三个二级标签。
   function routeKind() {
     var h = location.hash || '';
     if (h.indexOf('#/error') === 0) return 'error';
@@ -2259,14 +2102,10 @@
   function isCollectRoute() { return routeKind() === 'collect'; }
   function isListRoute() { return !!routeKind(); }
 
-  // 切换助手视图：与站点原生右侧内容互斥显示，左菜单同步高亮。
-  // 可重复调用（AngularJS 重绘后需重新压住原生内容），因此不做「状态未变就返回」的短路。
-  /* 面板的「壳」：站点重绘之后必须重贴的东西——原生二级菜单与内容的隐藏类、被 AngularJS
-     换掉的 right-content 里重新安家、入口高亮。这部分只跟 DOM 有关，每次观察器跑都要重做。 */
   function applyViewChrome(on) {
     var rc = $('.gongan2-container .right-content') || $('.right-content');
     if (rc) {
-      // .inner-content 带 zero-flex-* 会设置 display，必须用 !important 类隐藏
+
       $$('.second-menu, .inner-content', rc).forEach(function (el) { el.classList.toggle('gth-hide', on); });
       if (viewEl.parentNode !== rc) rc.appendChild(viewEl);
     }
@@ -2277,8 +2116,6 @@
     if (entry) entry.classList.toggle('active', on);
   }
 
-  /* 面板的「内容」：只读 store 的那两处（组卷历史、增量导出提示）。
-     打开面板必须画一次；之后只有 store 真变过才画——见 storeRev。 */
   function renderPanel() {
     panelRev = storeRev;
     renderHistory();
@@ -2290,7 +2127,7 @@
     applyViewChrome(on);
     if (on) {
       renderPanel();
-      syncFilterUI();   // 面板刚打开时按当前 tab 决定筛选行显示哪几排
+      syncFilterUI();
     }
     syncRail();
   }
@@ -2299,13 +2136,13 @@
     var menu = $('.gongan2-container .left-menu') || $('.left-menu');
     var existing = $('.gth-menu-item');
     var kind = routeKind();
-    // 非错题页 / 收藏页不注入入口，并清掉遗留的入口
+
     if (!kind) {
       if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
       return;
     }
     if (!menu) return;
-    // 两页共用同一个入口，名字也统一：这里不再按路由换标题，切回来什么都不用重画
+
     if (existing && menu.contains(existing)) return;
 
     var items = $$('.item', menu);
@@ -2326,9 +2163,6 @@
     if (viewOn) btn.classList.add('active');
   }
 
-  // 点击原生二级标签（日期 / 行政职业能力测试 / 公安专业知识）时交还原生内容。
-  // 必须显式关闭：这些标签切换时不改变路由，仅靠 hashchange 感知不到；
-  // 而 viewOn 若保持为 true，观察器会持续重新隐藏原生内容，导致二级标签打不开。
   document.addEventListener('click', function (e) {
     if (!viewOn) return;
     var it = e.target && e.target.closest && e.target.closest('.left-menu .item');
@@ -2344,11 +2178,10 @@
       });
       if (b.dataset.tab === 'notes') renderNotesList();
       if (b.dataset.tab === 'practice') renderHistory();
-      syncFilterUI();   // 筛选行按 pane 变
+      syncFilterUI();
     });
   });
 
-  // 筛选条件一变，之前缓存的题目就作废，下次导出 / 备份会按新条件重新拉
   function invalidateLoaded() { loaded.filter = null; loaded.list = []; }
 
   $('#gth-mode').addEventListener('change', function () { invalidateLoaded(); syncFilterUI(); });
@@ -2359,15 +2192,14 @@
     $('#gth-src').dataset.touched = '1';
     invalidateLoaded();
     updateExportHint();
-    syncFilterUI();   // 选到「模考收录」时要把模考模块那一排 chips 露出来
+    syncFilterUI();
   });
 
-  // 默认来源跟随当前页面：错题页默认错题本、收藏页默认收藏夹（用户手动改过就不再自动切）
   function syncSourceDefault() {
     var el = $('#gth-src');
     if (!el || el.dataset.touched) return;
     var want = isCollectRoute() ? 'favorite' : 'error';
-    // 来源跟着页面换了就得自己把提示语换掉：观察器那一路现在只管 store 变了才重画面板
+
     if (el.value !== want) { el.value = want; invalidateLoaded(); updateExportHint(); }
     if (!practiceSrcTouched && practiceSrcs.join() !== want) {
       practiceSrcs = [want];
@@ -2377,8 +2209,6 @@
   }
 
   var loaded = { filter: null, list: [] };
-
-  // ---- 增量导出：本地按来源记录「已导出过的题目 id」，只导出从未导出过的题 ----
 
   function currentSrc() { var el = $('#gth-src'); return (el && el.value) || 'error'; }
   function exIds(src) { return (store.exported && store.exported[src]) || {}; }
@@ -2406,9 +2236,6 @@
       : SRC_NAME[src] + ' 尚未导出过任何题目';
   }
 
-  /* 每个来源都要有一项：少了它 runExport 会静默落到默认前缀上，用户在下载目录里
-     看不出这批是不是模考那一批——只有表格里的「来源」列能区分。名字跟着导出面板上
-     那个勾选项（SRC_NAME.mock）走，不另起一套叫法。 */
   var EXPORT_PREFIX = {
     error: '上岸村错题_', favorite: '上岸村收藏_', both: '上岸村错题收藏_', mock: '上岸村模考收录_'
   };
@@ -2421,7 +2248,6 @@
     else download(name + '.xlsx', exportXlsx(list));
   }
 
-  // 首次导出时按当前筛选自动载入题目，省掉单独的「加载」按钮
   function ensureLoaded() {
     if (loaded.list.length) return Promise.resolve(loaded.list);
     var f = readFilter('export');
@@ -2479,7 +2305,7 @@
   });
 
   $('#gth-export-notes-md').addEventListener('click', function () {
-    // 列表被收窄时只导出看得见的题，否则「筛完再导出」会把被筛掉的也带上
+
     var ids = notesNarrowed() ? notesShownIds.slice() : null;
     if (ids && !ids.length) { setStatus('当前条件下没有笔记可导出', 'err'); return; }
     if (!ids && !Object.keys(store.notes).length) { setStatus('暂无笔记可导出', 'err'); return; }
@@ -2487,7 +2313,7 @@
   });
 
   $('#gth-collect-open').addEventListener('click', function () {
-    if (!notesNarrowed()) { openCollect(null); return; }   // null = 不限题，整理全部
+    if (!notesNarrowed()) { openCollect(null); return; }
     if (!notesShownIds.length) { setStatus('当前条件下没有可整理的内容', 'err'); return; }
     openCollect(notesShownIds.slice());
   });
@@ -2505,7 +2331,6 @@
     e.target.value = '';
   });
 
-  // 一键清空本脚本写入浏览器 localStorage 的全部数据
   $('#gth-wipe').addEventListener('click', function () {
     var nNote = Object.keys(store.notes).length;
     var nStat = Object.keys(store.mastered).length;
@@ -2550,8 +2375,6 @@
     setStatus('已清空本地数据', 'ok');
   });
 
-  /* 这两件事的耗时与不可逆程度差很远——重扫只往库里加登记、要联网几秒，清理是删了取不回来——
-     所以分成两次点击，不合成一个「一键整理」。 */
   $('#gth-mod-scan').addEventListener('click', function () {
     setStatus('正在按日期载入错题本与收藏夹…');
     busy(this, fetchByFilter({ mode: 'date', dayRange: '4', srcs: ['error', 'favorite'] }, 0))
@@ -2560,7 +2383,7 @@
         setStatus('这一趟过了 ' + list.length + ' 题。' + (gap
           ? '笔记里仍差 ' + gap + ' 题：这些题已不在错题本与收藏夹里，接口取不到它们的考点。'
           : '笔记里的题目模块已齐。'), 'ok');
-        renderNotesList();   // 模块下拉与那条提示按新登记的重画
+        renderNotesList();
       })
       .catch(function (e) { setStatus('重扫失败：' + e.message, 'err'); });
   });
@@ -2586,15 +2409,15 @@
   });
 
   var notesSearchKey = '';
-  var gthNoteEditing = false;   // 编辑器中途打开时，任何 renderNotesList 都跳过，避免被观察器/其他保存冲掉
-  var openNoteBox = null;       // 当前打开的笔记编辑器（单编辑器约束，防止多个框叠加）
+  var gthNoteEditing = false;
+  var openNoteBox = null;
   $('#gth-note-search').addEventListener('input', debounce(function (e) {
     notesSearchKey = e.target.value;
     renderNotesList();
   }, 150));
 
   function renderNotesList() {
-    if (gthNoteEditing) return;   // 编辑中途不重绘，防止正在输入的 textarea 被冲掉
+    if (gthNoteEditing) return;
     var listEl = $('#gth-notes-list');
     var countEl = $('#gth-note-count');
     if (!listEl) return;
@@ -2610,7 +2433,7 @@
       if (!noteMatch(noteFacets(id), notesFilter)) return false;
       if (!q) return true;
       var n = store.notes[id] || {};
-      // 用户不认识题目 ID，搜索只针对笔记内容、题干快照与划线原文
+
       if (((n.text || '') + ' ' + (n.snapshot || '')).toLowerCase().indexOf(q) >= 0) return true;
       return getHighlights(id).some(function (h) {
         return ((h.quote || '') + ' ' + (h.snap || '')).toLowerCase().indexOf(q) >= 0;
@@ -2692,7 +2515,6 @@
     });
   }
 
-  // 单编辑器约束：任何时候只保留一个编辑框
   function closeNoteEditor(s) {
     if (!s) return;
     s.box.remove();
@@ -2701,14 +2523,14 @@
   }
 
   function openNoteEditor(id, itemEl) {
-    // 同一道题再次点击「编辑」：聚焦已有框，不重复创建
+
     if (openNoteBox && openNoteBox.itemEl === itemEl) {
       var t0 = $('textarea', openNoteBox.box);
       if (t0) t0.focus();
       return;
     }
-    closeNoteEditor(openNoteBox);   // 切换到别的笔记前，先关掉上一个，避免叠加
-    blurEditors('panel');           // 同时收掉批注栏 / 划线的编辑器（焦点切换）
+    closeNoteEditor(openNoteBox);
+    blurEditors('panel');
     gthNoteEditing = true;
     var n = store.notes[id] || { text: '' };
     var box = document.createElement('div');
@@ -2730,7 +2552,7 @@
     });
     $('[data-act="save"]', box).addEventListener('click', function () {
       openNoteBox = null;
-      gthNoteEditing = false;   // 解除重绘保护，否则 renderNotesList 会被拦截、列表不刷新
+      gthNoteEditing = false;
       var newText = ta.value.trim();
       if (newText) {
         setNote(id, newText);
@@ -2748,9 +2570,7 @@
     catch (e) { return null; }
   }
 
-  // ---- 笔记批注栏：吸附在题目右侧页边距，默认只读，点击可二次编辑 ----
-
-  var itemsById = {};   // 恢复 / 清空后据此重绘批注
+  var itemsById = {};
 
   function renderAside(el, item) {
     var text = getNote(item.id);
@@ -2766,16 +2586,14 @@
       body = '<div class="gth-aside-empty" data-act="add">＋ 添加笔记</div>';
     }
     var html = head + body + asideHlHtml(item.id);
-    // 幂等：内容没变就一个字都不写。观察器每次唤醒都会走到这里，而重写 innerHTML
-    // 既会喂给 MutationObserver 形成 400ms 往复循环，又会把展开的划线清单、
-    // 正在编辑的批注框「一瞬间收回」。只在真的变了（或刚从编辑态退出）时才重绘
+
     if (el.dataset.gthHtml === html && !wasEditing) return;
     el.dataset.gthHtml = html;
-    var keepOpen = el.dataset.hlOpen === '1';   // 展开状态不在 HTML 里，重绘后要还原
+    var keepOpen = el.dataset.hlOpen === '1';
     el.innerHTML = html;
     if (keepOpen) {
       var hlList = $('.gth-aside-hl-list', el);
-      if (hlList) hlList.classList.add('on');   // 箭头朝向由 CSS 跟着 .on 转，这里不再写文案
+      if (hlList) hlList.classList.add('on');
     }
     var ed = $('[data-act="edit"]', el), ad = $('[data-act="add"]', el);
     if (ed) ed.addEventListener('click', function () { editAside(el, item); });
@@ -2783,12 +2601,10 @@
     bindAsideHl(el, item);
   }
 
-  // 批注栏里的划线清单：内联展开，因为轨道容器 overflow:hidden 会裁掉浮层
   function asideHlHtml(id) {
     var list = getHighlights(id);
     if (!list.length) return '';
-    // 收起态只报条数。轨道压到 clamp 下限 160px 时「（黄 x · 红 y）」会把这行挤成两行，
-    // 而颜色在展开后的清单里每条前面都有圆点——收起态要回答的只是「要不要点开」
+
     var desc = list.length + ' 条划线';
     var rows = list.map(function (h, i) { return hlRowHtml(h, i, '点击改批注'); }).join('');
     var lost = list.filter(function (h) { return h.lost; }).length;
@@ -2807,7 +2623,7 @@
     if (!t || !list) return;
     t.addEventListener('click', function () {
       var on = list.classList.toggle('on');
-      el.dataset.hlOpen = on ? '1' : '';   // 记住展开状态，重绘后由 renderAside 还原
+      el.dataset.hlOpen = on ? '1' : '';
       syncRail();
     });
     $$('.gth-hlp-item .t, .gth-hlp-item .n', list).forEach(function (node) {
@@ -2832,7 +2648,7 @@
     var e = ta.selectionEnd == null ? ta.value.length : ta.selectionEnd;
     ta.value = ta.value.slice(0, s) + text + ta.value.slice(e);
     var p = s + text.length;
-    try { ta.setSelectionRange(p, p); } catch (err) { /* 某些输入类型不支持 */ }
+    try { ta.setSelectionRange(p, p); } catch (err) {  }
     ta.focus();
   }
 
@@ -2844,9 +2660,6 @@
     });
   }
 
-  /* 焦点切换：三处笔记编辑器（题目批注栏 / 划线的批注浮层 / 笔记列表里的编辑框）
-     同一时刻只保留一个。否则划线的批注浮层会压住批注栏，两个 textarea 还会抢输入焦点。
-     keep 传本次要留下的那一个，其余全部收起 */
   function blurEditors(keep) {
     if (keep !== 'aside') closeAsideEditor();
     if (keep !== 'hlnote') closeHlNote();
@@ -2901,8 +2714,6 @@
     $('[data-act="cancel"]', el).addEventListener('click', function () { renderAside(el, item); });
   }
 
-  // 只在真的变了才写 DOM。徽章的文案/图标每次都是同一份，无脑重写会不停惊动
-  // MutationObserver（→ refreshPageUI → 又一轮重绘）
   function setIf(el, prop, val) {
     if (!el) return;
     if (prop === 'hidden') { if (el.hidden !== !!val) el.hidden = !!val; return; }
@@ -2917,7 +2728,7 @@
       var errEl = $('.gth-err', bar);
       var rec = store.mastered[id];
       var done = isMastered(id);
-      // 没做过也没标记过的题，未掌握没有信息量，弱化成幽灵样式；但它仍可点（点一下就标记已掌握）
+
       setIf(badge, 'className', 'gth-badge' + (done ? ' done' : (!rec ? ' ghost' : (getNote(id) ? ' has' : ''))));
       setIf(badge, 'textContent', done && rec.manual ? '已掌握 · 手动' : masteredLabel(id));
       setIf(badge, 'title', done ? '点一下取消掌握标记' : '点一下标记为已掌握');
@@ -2928,13 +2739,13 @@
         setIf(errEl, 'className', t.cls);
         setIf(errEl, 'innerHTML', t.html);
       } else {
-        // 收藏页里从没做过的题：不谎报「答错 1 次」。错题本里的题必然错过一次，所以那边照旧从 1 起算
+
         setIf(errEl, 'hidden', true);
         setIf(errEl, 'className', 'gth-err');
         setIf(errEl, 'innerHTML', '');
       }
     });
-    // 恢复 / 清空本地数据后同步刷新已渲染的批注
+
     rerenderAsides();
   }
 
@@ -2946,8 +2757,6 @@
     return local + WRONG_BASE;
   }
 
-  // 手动掌握开关：与自动判分共用同一份 mastered 记录，只是直接把连对次数顶到阈值。
-  // 标记时留 manual 记号，日后重练交卷仍按自动规则走（答错清零、答对递增）
   function toggleMastery(id) {
     var rec = store.mastered[id];
     if (rec && rec.streak >= MASTER_STREAK) {
@@ -2962,7 +2771,6 @@
     renderNotesList();
   }
 
-  // 操作条的「笔记」按钮：滚到这道题，并把右侧批注栏切到编辑态
   function focusNote(item) {
     if (viewOn) setView(false);
     var id = String(item.id);
@@ -2970,7 +2778,7 @@
     if (!aside) { toast('批注栏还没就绪，稍后再点一次'); return; }
     var content = railContent(), node = qNodes[id];
     if (node && node.isConnected) {
-      // 以「可见切片顶部」为基准滚动，错题页的内滚动盒与收藏页的页面滚动都适用
+
       var base = railFrame ? railFrame.top : (content ? content.getBoundingClientRect().top : 0);
       var delta = node.getBoundingClientRect().top - base - 8;
       var sc = railScroller(content);
@@ -2985,22 +2793,15 @@
     toast('笔记栏在题目右侧');
   }
 
-  /* ---------- 批注轨道：镜像题目滚动容器的位置，跟随其 scrollTop ---------- */
-
-  // 必须用子选择器：题目区里也有 .content（题干那一层），用后代选择器会在收藏页
-  // 误命中第一道题的题干。错题页的滚动层是 .inner-content 的直接子节点
   var CONTENT_SEL = '.gongan2-container .right-content .inner-content > .content';
-  var qNodes = {};   // 题目 id -> ng-repeat 节点
+  var qNodes = {};
 
-  // 错题页的列表包在 .content（height:600px;overflow:scroll）里，收藏页没有这层包裹，
-  // 所以滚动容器要动态解析，不能写死选择器
   function railContent() {
     return $(CONTENT_SEL) ||
       $('.gongan2-container .right-content .inner-content') ||
       $('.right-content .inner-content');
   }
 
-  // 往上找真正在滚动的那个祖先；返回 null 表示列表不自己滚、跟着页面整体滚动
   function railScroller(content) {
     var el = content;
     while (el && el !== document.body && el !== document.documentElement) {
@@ -3014,26 +2815,20 @@
     return null;
   }
 
-  /* 轨道的坐标模型：不猜「谁在滚」，只算「列表当前露出哪一段视口」。
-     错题页的列表在 600px 的内部滚动盒里，收藏页没有那层包裹、跟着页面滚，
-     两种情况下用同一套算法都能对齐：
-       可见切片 top = max(列表盒子 top, 0)，bottom = min(盒子 bottom, 视口高)
-       批注框 top   = 题目矩形 top − 可见切片 top                            */
-  var railFrame = null;   // {rect, top, height}
+  var railFrame = null;
   var railRaf = 0;
 
   function railVisible() {
     var content = railContent();
     if (!content) return null;
     var r = content.getBoundingClientRect();
-    if (!r.height) return null;                       // 切到助手视图时原生内容被隐藏
+    if (!r.height) return null;
     var top = Math.max(r.top, 0);
     var bottom = Math.min(r.bottom, window.innerHeight);
-    if (bottom - top < 40) return null;               // 只剩一条缝时不摆东西
+    if (bottom - top < 40) return null;
     return { rect: r, top: top, height: bottom - top };
   }
 
-  // 只读布局 + 写 top，按 rAF 节流，可以挂在 scroll 上
   function placeRailItems() {
     var inner = $('#gth-rail-in');
     if (railEl.hidden || !railFrame || !inner) return;
@@ -3043,7 +2838,7 @@
         a.hidden = false;
         a.style.top = Math.round(node.getBoundingClientRect().top - railFrame.top) + 'px';
       } else {
-        a.hidden = true;   // 题目已从列表移除 / 节点还没就绪，别在轨道里留无主的「鬼影」框
+        a.hidden = true;
       }
     });
     syncBalloons();
@@ -3056,7 +2851,7 @@
       var f = railVisible();
       if (!f) { railEl.hidden = true; railFrame = null; return; }
       if (!railFrame || f.top !== railFrame.top || f.height !== railFrame.height) {
-        // 页面整体滚动时列表盒子的 top 会变，轨道几何要跟着走
+
         railEl.style.top = Math.round(f.top) + 'px';
         railEl.style.height = Math.round(f.height) + 'px';
       }
@@ -3069,8 +2864,6 @@
     var rail = railEl, inner = $('#gth-rail-in');
     if (!isListRoute() || !inner) { rail.hidden = true; railFrame = null; return; }
 
-    // 滚动可能发生在内部容器（错题页的 .content），也可能发生在页面本身（收藏页）。
-    // capture 阶段的监听能同时收到两者，不必再猜哪个元素在滚
     if (!document.body.dataset.gthRailScroll) {
       document.body.dataset.gthRailScroll = '1';
       document.addEventListener('scroll', onRailScroll, { capture: true, passive: true });
@@ -3078,19 +2871,13 @@
     var content = railContent();
     if (content && !content.dataset.gthRailLoad) {
       content.dataset.gthRailLoad = '1';
-      content.addEventListener('load', syncRail, true);   // 图片加载后行高变化需重新对齐
+      content.addEventListener('load', syncRail, true);
     }
 
     var f = railVisible();
     if (!f) { rail.hidden = true; railFrame = null; return; }
     railFrame = f;
-    /* 宽度按「可视区右缘 − 落点」现算。CSS 里那个 clamp(160px, (100vw-1000px)/2 - 24px, 280px)
-       把可用空间当成「容器右缘到视口右缘」，可落点其实是内容区右缘 + 24（内容在容器里还要减去
-       左菜单与内边距），窄视口下限 160px 会把整张卡推到屏幕外——实测卡片右缘 1166 越过了
-       clientWidth，elementsFromPoint 在那个点上取不到任何元素。
-       挤不下就不摆：宁可没有批注栏，也不要一张切在屏幕边上的。
-       （注：这一条修的不是「箭头看着像两个叠在一起」——那个是类名与 bootstrap 全局 .caret
-       撞车，见样式表里 .gth-caret 上面的说明。我当时把两件事当成了一件，白改了两轮。） */
+
     var railLeft = Math.round(f.rect.right + 24);
     var avail = (document.documentElement.clientWidth || window.innerWidth) - railLeft - 8;
     if (avail < 120) { rail.hidden = true; railFrame = null; return; }
@@ -3099,7 +2886,7 @@
     rail.style.width = Math.min(280, avail) + 'px';
     rail.style.top = Math.round(f.top) + 'px';
     rail.style.height = Math.round(f.height) + 'px';
-    inner.style.transform = 'none';   // 老版本用 translate 跟随滚动，现在改按可视区算绝对坐标
+    inner.style.transform = 'none';
     placeRailItems();
   }
 
@@ -3114,12 +2901,10 @@
       var item = null;
       try { item = ang.element(node).scope().item; } catch (e) { return; }
       if (!item || !item.id) return;
-      // 防同一道题在轨道里出现多个批注栏：
-      // 节点被站点重渲染替换（带图题目常见，图片加载/布局变化触发 digest）时，旧的 aside 会残留在轨道里。
-      // 用 item.id 作为稳定键去重。
+
       railInner.querySelectorAll('.gth-aside[data-id="' + item.id + '"]').forEach(function (a) { a.remove(); });
       node.dataset.gth = '1';
-      // 划线的定位根：paintRoot 靠它把题目 id 和 DOM 子树对上
+
       node.setAttribute('data-gth-qid', item.id);
       itemsById[item.id] = item;
       qNodes[item.id] = node;
@@ -3130,7 +2915,7 @@
       bar.dataset.id = item.id;
       bar.dataset.kind = routeKind();
       bar.dataset.serverErr = serverErrCount(item);
-      // 节点被站点重渲染替换时，旧的 qbar 还挂在原节点上。重新挂之前先清掉同题旧 qbar，避免重复
+
       $$('.gth-qbar[data-id="' + item.id + '"]').forEach(function (b) { b.remove(); });
       bar.innerHTML =
         '<span class="gth-err"></span>' +
@@ -3142,7 +2927,7 @@
         icon('copy') + '复制题目</button>';
 
       bar.querySelector('.gth-qbar-copy').addEventListener('click', function (e) {
-        e.stopPropagation();   // 防止站点原有点击展开/收起等行为被误触
+        e.stopPropagation();
         var btn = e.currentTarget;
         var it = itemsById[btn.dataset.id];
         if (!it) return;
@@ -3155,14 +2940,11 @@
         }, 1200);
       });
 
-      // 掌握状态：手动开关。站点的掌握度只由重练交卷驱动，而收藏页根本没有交卷场景，
-      // 没有手动入口的话两处徽标就只是装饰，收藏题永远停在「未掌握」
       bar.querySelector('.gth-badge').addEventListener('click', function (e) {
         e.stopPropagation();
         toggleMastery(item.id);
       });
 
-      // 笔记入口：滚到这道题，并直接展开右侧批注栏的编辑器
       bar.querySelector('.gth-qbar-note').addEventListener('click', function (e) {
         e.stopPropagation();
         focusNote(item);
@@ -3173,15 +2955,12 @@
       aside.dataset.id = item.id;
       renderAside(aside, item);
 
-      // 操作条挂在 ng-repeat 节点的第一个子节点位置，也就是 .question-box（材料 + 题干）之前。
-      // 之前是 appendChild，落在解析之后，等于「整道题看完才看见控件」
       node.insertBefore(bar, node.firstChild);
       railInner.appendChild(aside);
     });
     refreshBadges();
   }
 
-  // 只写属性不惊动观察器：body 上那个 MutationObserver 只 observe childList，属性不在它眼里
   function syncKeyTargets() {
     $$(KEYACT).forEach(function (el) {
       if (el.getAttribute('tabindex') === null) el.setAttribute('tabindex', '0');
@@ -3193,38 +2972,29 @@
     if (e.key !== 'Enter' && e.key !== ' ') return;
     var t = e.target && e.target.closest ? e.target.closest(KEYACT) : null;
     if (!t) return;
-    e.preventDefault();   // 空格落在这些元素上不该把页面滚走
+    e.preventDefault();
     t.click();
   });
 
-  // 错题列表与左侧菜单均由 AngularJS 异步渲染，用观察器在重绘后补回
   var refreshPageUI = debounce(function () {
-    if (isMocksPage()) { mocksScanTick(); return; }   // mocks 页只做模考收录扫描，下面是 gongan 页的活
+    if (isMocksPage()) { mocksScanTick(); return; }
     injectListUI();
     injectMenuEntry();
-    /* 原生内容被 AngularJS 重绘后会丢掉隐藏类，壳要重贴；面板内容只读 store，所以按
-       storeRev 决定要不要重画。原来这里走的是面板的完整开启流程：站点每变一次就把组卷历史
-       整段 innerHTML 重写、监听重绑，展开的下拉和刚聚焦的控件一起被抹掉，还顺带每次重发一遍
-       行测模块请求。批注栏对位本来就在下一行，这里不再重复。 */
+
     if (viewOn) {
       applyViewChrome(true);
       if (storeRev !== panelRev) renderPanel();
     }
     syncRail();
-    repaintHighlights();   // 站点重绘后按锚点把划线重新落笔（自带幂等签名，不会往复触发）
-    syncBalloons();        // 划线重画后，右侧页边距的批注气球要跟着重新对位
-    syncKeyTargets();      // 上面这些重绘会新建出带 click 的节点，键盘可达要补回来
+    repaintHighlights();
+    syncBalloons();
+    syncKeyTargets();
   }, 400);
 
   new MutationObserver(refreshPageUI).observe(document.body, {
     childList: true, subtree: true
   });
   window.addEventListener('resize', syncRail);
-  // 首次注入不在这里跑：那时后面还有一批 `var X = {}` 没赋值（syncBalloons 读 balloonEls
-  // 就是在这一步 Object.keys(undefined) 抛错，把整个脚本的后半段——含划线条——一起带走）。
-  // 统一挪到 IIFE 末尾，见文件最后。
-
-  /* ================= 划线交互：选中即划 ================= */
 
   var hlBar = document.createElement('div');
   hlBar.id = 'gth-hlbar';
@@ -3248,7 +3018,6 @@
     toastTimer = setTimeout(function () { t.classList.remove('on'); }, 1600);
   }
 
-  // 这些区域不允许划线：插件自己的 UI、输入控件、答题页的导航与答题卡
   var HL_BLOCK_SEL = '#gth-hlbar,#gth-collect,#gth-toast,#gth-rail,.gth-aside,.gth-view,' +
     '#gth-quiz .gthq-top,#gth-quiz .gthq-sheet,#gth-quiz .gthq-nav,textarea,input,select';
 
@@ -3266,7 +3035,6 @@
     return null;
   }
 
-  // 选区必须在这里就被抓成快照：一点工具条按钮，浏览器选区就没了
   function captureSelection() {
     var sel = window.getSelection();
     if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
@@ -3282,7 +3050,6 @@
     return { quote: quote, start: start, end: end, ctx: ctx, rect: range.getBoundingClientRect() };
   }
 
-  // 取（必要时先建）选区对应的那条划线。已有一条完整覆盖选区的就复用，不重复建
   function ensureHl(p, color) {
     var hits = hlOverlap(p.ctx.root, p.start, p.end, null);
     if (hits.length === 1) return { qid: p.ctx.qid, idx: hits[0], reused: true };
@@ -3292,7 +3059,6 @@
     return { qid: p.ctx.qid, idx: list.length - 1, reused: false };
   }
 
-  /* Word 式切换：对选区再点一次「同色」= 取消这段的划线；点别的颜色 = 改色 */
   function toggleHl(p, color) {
     var same = hlOverlap(p.ctx.root, p.start, p.end, color);
     if (same.length) {
@@ -3314,15 +3080,14 @@
     hlBar.classList.add('on');
     var r = p.rect, bw = hlBar.offsetWidth, bh = hlBar.offsetHeight;
     var top = r.top - bh - 8;
-    if (top < 8) top = r.bottom + 8;          // 顶部放不下就翻到选区下方
+    if (top < 8) top = r.bottom + 8;
     var left = Math.max(8, Math.min(r.left + r.width / 2 - bw / 2, window.innerWidth - bw - 8));
     hlBar.style.left = left + 'px';
     hlBar.style.top = top + 'px';
   }
 
-  hlBar.addEventListener('mousedown', function (e) { e.preventDefault(); });   // 保住选区
-  /* 划线动作的唯一入口：选中后点工具条、或按 Alt+1/2/3，走的都是这条。
-     act = 'note'（挂批注）或颜色。 */
+  hlBar.addEventListener('mousedown', function (e) { e.preventDefault(); });
+
   function applyHl(act, p) {
     if (act === 'note') {
       var h = ensureHl(p, 'yellow');
@@ -3367,18 +3132,15 @@
     applyHl(e.key === '3' ? 'note' : (e.key === '2' ? 'red' : 'yellow'), p);
   });
 
-  /* 点已划线的文字（无选区）→ 弹出这条划线的菜单：批注 / 改色 / 取消划线 */
   document.addEventListener('mouseup', function (e) {
     var sel = window.getSelection();
-    if (sel && !sel.isCollapsed) return;      // 有选区时归工具条处理
+    if (sel && !sel.isCollapsed) return;
     var mk = e.target && e.target.closest && e.target.closest('mark.gth-hl');
     if (!mk) { closeHlMenu(); return; }
     var root = mk.closest('[data-gth-qid]');
     if (!root || mk.dataset.gthI == null) return;
     openHlMenu(root.getAttribute('data-gth-qid'), Number(mk.dataset.gthI), mk.getBoundingClientRect());
   });
-
-  /* ================= 划线的批注与取消（Word 式） ================= */
 
   var hlMenuEl = null, hlMenuAnchor = null;
   var hlNoteEl = null, hlNoteCtx = null;
@@ -3433,7 +3195,7 @@
   function openHlMenu(qid, idx, rect) {
     var rec = (store.highlights[qid] || [])[idx];
     if (!rec) return;
-    blurEditors('hlmenu');   // 焦点切换：先收起别的编辑器
+    blurEditors('hlmenu');
     if (!hlMenuEl) buildHlMenu();
     hlMenuAnchor = rect;
     hlMenuEl.dataset.q = qid;
@@ -3497,7 +3259,7 @@
   function openHlNote(qid, idx, rect) {
     var rec = (store.highlights[qid] || [])[idx];
     if (!rec) return;
-    blurEditors('hlnote');   // 焦点切换：批注栏的笔记框同时只留一个
+    blurEditors('hlnote');
     if (!hlNoteEl) buildHlNote();
     hlNoteCtx = { qid: qid, idx: idx };
     $('.gth-hln-q', hlNoteEl).innerHTML =
@@ -3510,7 +3272,6 @@
   }
   function closeHlNote() { if (hlNoteEl) { hlNoteEl.hidden = true; hlNoteCtx = null; } }
 
-  // 一处划线变动后，把所有「看到划线」的界面一起刷新
   function afterHlChange() {
     refreshBadges();
     renderNotesList();
@@ -3532,7 +3293,6 @@
     });
   }
 
-  // 答题报告页里的划线清单：点文字写批注，点 ✕ 取消划线
   document.addEventListener('click', function (e) {
     if (!e.target || !e.target.closest) return;
     var box = e.target.closest('#gth-quiz [data-hls]');
@@ -3546,15 +3306,10 @@
     }
   });
 
-  /* ---- 右侧页边距的批注气球：只在错题页，锚定到划线所在的那一行 ---- */
-
-  /* 气球上一直挂着 cursor:pointer 却没有任何处理器，点它没反应。按 Word 的模型，
-     页边那个框就是这条批注的化身，点它当然该改这条批注——所以接上，而不是把 pointer 摘掉。
-     走的是页边清单里点一条时同一个 openHlNote。 */
   document.addEventListener('click', function (e) {
     var el = e.target && e.target.closest ? e.target.closest('.gth-balloon') : null;
     if (!el) return;
-    var k = el.dataset.k || '', c = k.lastIndexOf(':');   // k 是 qid + ':' + 下标，qid 自己可能带冒号
+    var k = el.dataset.k || '', c = k.lastIndexOf(':');
     if (c <= 0) return;
     openHlNote(k.slice(0, c), Number(k.slice(c + 1)), el.getBoundingClientRect());
   });
@@ -3563,12 +3318,12 @@
 
   function syncBalloons() {
     var inner = $('#gth-rail-in');
-    // 助手视图打开 / 不在列表页时轨道没有可见切片，批注气球一并收起
+
     if (!inner || !isListRoute() || !railFrame) return;
 
     var want = {};
     Object.keys(store.highlights).forEach(function (qid) {
-      if (!qNodes[qid]) return;   // 这道题不在当前列表里，没必要摆气球（也让滚动时的开销只跟当前列表有关）
+      if (!qNodes[qid]) return;
       (store.highlights[qid] || []).forEach(function (rec, i) {
         if (rec.note) want[qid + ':' + i] = { qid: qid, idx: i, rec: rec };
       });
@@ -3589,7 +3344,7 @@
         inner.appendChild(el);
         balloonEls[k] = el;
       }
-      // 只在内容真的变了才写 innerHTML，否则会不停触发观察器造成往复重绘
+
       var q = w.rec.quote || '';
       if (q.length > 40) q = q.slice(0, 40) + '…';
       var sig = (w.rec.color || 'yellow') + '|' + q + '|' + (w.rec.note || '');
@@ -3604,7 +3359,6 @@
     });
     if (!rows.length) return;
 
-    // 用 rect 相减得到「划线相对可见切片顶部」的偏移，与滚动位置无关
     rows.forEach(function (row) {
       row.top = null;
       var node = qNodes[row.qid];
@@ -3612,7 +3366,7 @@
       var mk = $('mark.gth-hl[data-gth-i="' + row.idx + '"]', node);
       if (!mk) return;
       row.top = mk.getBoundingClientRect().top - railFrame.top;
-      row.h = row.el.offsetHeight || 60;   // 先量高度，避免写 top 再读高度来回触发重排
+      row.h = row.el.offsetHeight || 60;
     });
 
     rows.sort(function (a, b) {
@@ -3620,15 +3374,13 @@
     });
     var last = -1e9;
     rows.forEach(function (row) {
-      if (row.top == null) { row.el.hidden = true; return; }   // 题目不在当前列表里
+      if (row.top == null) { row.el.hidden = true; return; }
       row.el.hidden = false;
-      var t = Math.max(row.top, last + 8);   // 简单纵向避让：紧跟上一条，不互相压住
+      var t = Math.max(row.top, last + 8);
       row.el.style.top = Math.round(t) + 'px';
       last = t + row.h;
     });
   }
-
-  /* ================= 一键整理为笔记 ================= */
 
   var collectEl = null;
   var collectState = { qids: null, src: 'both', onlyAnalysis: true, group: 'q' };
@@ -3676,7 +3428,6 @@
       '> 生成时间：' + new Date().toLocaleString() + '　共 ' + items.length + ' 题　' + nHl + ' 条划线', ''];
     if (!items.length) { L.push('（没有可整理的内容）'); return L.join('\n'); }
 
-    // 按颜色归拢：把散在各题里的红色易错点收成一节，这才是划线真正的复习价值
     if (collectState.group === 'color') {
       var red = [], yel = [], notes = [];
       items.forEach(function (it) {
@@ -3812,8 +3563,6 @@
 
   var quiz = null;
 
-  // 随机组卷先分层再抽（层内按答错次数加权，Efraimidis-Spirakis）：顽固错题 → 尚未重练 → 练过但没掌握 → 已掌握
-  // 已掌握（含收藏页手动打勾的）排最后：用户说过「会了」的题不该再来占题量。
   function tierOf(q) {
     if (isMastered(q.id)) return 3;
     if (errCountOf(q) >= STUBBORN_MIN) return 0;
@@ -3821,7 +3570,6 @@
     return 2;
   }
 
-  // 层内加权：key = 随机值^(1/errCountOf)，次数越大 key 越接近 1、排得越前。errCountOf 已含 WRONG_BASE，就是界面上显示的那个次数
   function weightedShuffle(arr) {
     return arr.map(function (q) {
       return { q: q, key: Math.pow(Math.random(), 1 / errCountOf(q)) };
@@ -3830,21 +3578,14 @@
   }
 
   function weightedPick(arr, k) {
-    var n = (k && k < arr.length) ? k : arr.length;   // k=0 视为「全部」，仍按加权顺序打乱
+    var n = (k && k < arr.length) ? k : arr.length;
     var tiers = [[], [], [], []];
     arr.forEach(function (q) { tiers[tierOf(q)].push(q); });
     return tiers.reduce(function (out, t) { return out.concat(weightedShuffle(t)); }, []).slice(0, n);
   }
 
-  // ---- 顺序刷题进度（从上次继续）----
-  // 键 = 筛选描述 + 顺序，值 = 该题在「完整有序列表」中的下标（0 起）
   function resumeKey(f, order) { return filterDesc(f) + '|' + order; }
 
-  /* 续刷的键 = filterDesc + 顺序，而 filterDesc 里的来源标签早先写的是 SRC_NAME.both
-     （「错题+收藏」），后来改成逐项拼（「错题本＋收藏夹」）。老库里那条按旧标签算出的键
-     从此命不中：既接不上进度，「从头开始」也删不掉它。按旧写法再试一次，命中就搬成新键——
-     用户「刷到第几题」保住，库里也不留一条永不命中的记录。
-     约束：这两个名字（srcLabel 的拼法 / SRC_NAME.both）再变，这条自愈就够不着老键了。 */
   function resumeKeyOld(key) {
     return key.replace(srcLabel(['error', 'favorite']), SRC_NAME.both);
   }
@@ -3870,18 +3611,12 @@
     saveStore();
   }
 
-  /* 现版本算不出来的续刷键。filterDesc 现在拼出的键一定带来源段「 · 」（按日期与按科目都拼），
-     或者整串以「模考收录」开头（只勾模考时没有站点来源段）——两种都不满足的，是「来源还没进
-     描述」那一代留下的：键里没记来源，搬到错题本 / 收藏夹 / 合并哪一种都是猜，所以不自动搬，
-     只交给「清理残留」删。注意可自愈的那代（「错题+收藏 · …」）含「 · 」，不在这里命中。 */
   function staleResumeKeys(resume) {
     return Object.keys(resume || {}).filter(function (k) {
       return k && k.indexOf(' · ') < 0 && k.indexOf(SRC_NAME.mock) !== 0;
     });
   }
 
-  /* 不再被任何脚本读取的存储键：已停用的机考助手留下的整库，以及排查时产生的历史快照。
-     在用的库（gongan_tiku_helper_<ctx>，没有 __bak_ 段）与别的 ctx 的在用的库都落不进这两个模式。 */
   function strayStorageKeys(names) {
     return (names || []).filter(function (k) {
       return /^gongan_exam_helper_/.test(k) || /^gongan_tiku_helper_[\w-]+__bak_/.test(k);
@@ -3894,7 +3629,6 @@
     saveStore();
   }
 
-  // 优先按题目 id 定位（列表变动时下标会漂移），找不到才退回记录的下标
   function resumeOffset(key, list) {
     var r = readResume(key);
     if (!r) return 0;
@@ -3909,11 +3643,11 @@
     if (!f.srcs.length) { setStatus('至少勾一个来源（错题本 / 收藏夹 / 模考收录）', 'err'); return; }
     var num = Math.max(0, parseInt($('#gth-num').value, 10) || 0);
     var order = $('#gth-order').value;
-    var seq = order !== 'random';                 // 只有顺序刷题记录 / 续用进度
+    var seq = order !== 'random';
     var key = seq ? resumeKey(f, order) : '';
     var r = seq ? readResume(key) : null;
-    var desc0 = filterDesc(f);       // 按下这一刻的条件：取题期间面板上的筛选还能改，返回时要对得上
-    // 续刷时要拉到「上次位置 + 题量」，否则只取到第一页会拿不到后面的题
+    var desc0 = filterDesc(f);
+
     var want = !num ? 0 : ((r && r.idx) ? r.idx + num + 1 : num);
     setStatus('正在组卷…');
     busy(this, fetchByFilter(f, want).then(function (all) {
@@ -3921,7 +3655,7 @@
       var ordered = order === 'desc' ? all.slice().reverse() : all;
       var offset = seq ? resumeOffset(key, ordered) : 0;
       var restarted = false;
-      if (offset >= ordered.length) {            // 已刷到末尾，从头再来
+      if (offset >= ordered.length) {
         offset = 0;
         clearResume(key);
         restarted = true;
@@ -3930,8 +3664,8 @@
         ? weightedPick(ordered, num)
         : (num ? ordered.slice(offset, offset + num) : ordered.slice(offset));
       if (!picked.length) { setStatus('没有可练习的题目', 'err'); return; }
-      loaded.filter = f;                          // 供组卷历史复用同一筛选
-      // 顺序刷题：若上次有「未作答」的题，这次先跳到第一道未作答的题接着做
+      loaded.filter = f;
+
       var startIdx = 0;
       if (seq && r && r.answered && picked.length) {
         for (var fu = 0; fu < picked.length; fu++) {
@@ -3941,8 +3675,7 @@
       var note = restarted ? '（已刷完，从头开始）'
         : ((offset + startIdx) ? '（从第 ' + (offset + startIdx + 1) + ' 题继续）' : '');
       setStatus('组卷完成，共 ' + picked.length + ' 题' + note, 'ok');
-      /* 取题请求在飞的这段时间里筛选控件仍可改，而卷子是按按下那一刻的条件生成的。
-         不把这一点说出来，重练界面顶上的条件就成了面板当前值的影子——看着是这次的，其实不是。 */
+
       if (filterDesc(readFilter('practice')) !== desc0) {
         toast('筛选在取题期间改过了：这份卷子按「' + desc0 + '」生成');
       }
@@ -3951,15 +3684,13 @@
         quiz.resumeKey = key;
         quiz.resumeBase = offset;
         quiz.idx = startIdx;
-        // 立刻记录起始位置；沿用上次已作答记录，作为本次续刷的基准
+
         saveResume(key, offset + startIdx, picked[startIdx] && picked[startIdx].id, quiz.answeredIds);
       }
-      renderQuiz();           // 用更新后的 idx 重新渲染，确保直接显示第一道未作答的题
+      renderQuiz();
       renderPracticeHint();
     }).catch(function (e) { setStatus('组卷失败：' + e.message, 'err'); }));
   });
-
-  // ---- 组卷历史：滚动保留最近三次 ----
 
   function pushHistory(desc, list) {
     store.history.unshift({
@@ -3995,7 +3726,6 @@
     });
   }
 
-  // 重练面板的引导文案：随机说明分层规则，顺序提示续刷位置并可重置
   function renderPracticeHint() {
     var el = $('#gth-practice-hint'), btn = $('#gth-resume-reset');
     if (!el) return;
@@ -4005,7 +3735,7 @@
       if (btn) btn.hidden = true;
       return;
     }
-    // r.idx 是「下次从第几题开始」的下标：中途退出=重做该题，交卷后=接着下一题
+
     var r = readResume(resumeKey(readFilter('practice'), order));
     el.textContent = r
       ? '下次从第 ' + (r.idx + 1) + ' 题继续'
@@ -4019,7 +3749,6 @@
     setStatus('已清除该条件下的刷题进度，下次从头开始', 'ok');
   });
 
-  // 按历史记录的筛选条件重新拉题，再与当时的题目 id 快照取交集
   function replayHistory(h) {
     if (!h || !h.filter) return;
     setStatus('正在按历史条件重新拉取题目…');
@@ -4039,7 +3768,7 @@
     quiz = {
       list: list, desc: desc, idx: 0,
       answers: {}, submitted: false,
-      answeredIds: seedAnswered || {},   // 续刷时沿用上次已作答记录，避免被首次渲染清空
+      answeredIds: seedAnswered || {},
       startAt: Date.now(), timer: null
     };
     if (!fromHistory) pushHistory(desc, list);
@@ -4059,7 +3788,7 @@
     quizEl.innerHTML = '';
     document.body.style.overflow = '';
     refreshBadges();
-    renderPracticeHint();   // 退出重练后刷新「上次刷到第几题」
+    renderPracticeHint();
   }
 
   function toggleAnswer(id, label, multi) {
@@ -4070,7 +3799,7 @@
       if (i >= 0) cur.splice(i, 1); else cur.push(label);
       quiz.answers[id] = cur.slice().sort();
     }
-    if ((quiz.answers[id] || []).length) quiz.answeredIds[id] = true;   // 只要作答过就记一笔
+    if ((quiz.answers[id] || []).length) quiz.answeredIds[id] = true;
     renderQuiz();
   }
 
@@ -4082,13 +3811,13 @@
 
   function renderQuiz() {
     if (!quiz) return;
-    // 顺序刷题：实时记录刷到第几题 + 已作答集合，中途退出后可从「第一道未作答」继续
+
     if (quiz.resumeKey && !quiz.submitted && quiz.list[quiz.idx]) {
       saveResume(quiz.resumeKey, quiz.resumeBase + quiz.idx, quiz.list[quiz.idx].id, quiz.answeredIds);
     }
     quizEl.innerHTML = quiz.submitted ? reportHtml() : doingHtml();
     bindQuiz();
-    repaintHighlights();   // 报告页每道题都是新 DOM，渲染完立刻把划线画回去
+    repaintHighlights();
   }
 
   function doingHtml() {
@@ -4180,7 +3909,7 @@
     }).join('');
 
     var pct = quiz.list.length ? Math.round(right / quiz.list.length * 100) : 0;
-    // 错题数只统计「答过且答错」的，未作答不计入错题
+
     var wrongCount = quiz.list.filter(function (q) {
       var a = quiz.answers[q.id] || [];
       return a.length > 0 && ansKey(a) !== ansKey(q.correct_answer);
@@ -4230,8 +3959,7 @@
       quiz.timer = null;
       applyMastery();
       quiz.submitted = true;
-      // 交卷：未作答的不算「做过」。全部作答 -> 整套完成（下次从头开始）；
-      // 否则下次从「第一道未作答」继续，而不是径直跳到这套之后
+
       if (quiz.resumeKey) {
         var fu = 0;
         for (; fu < quiz.list.length; fu++) {
@@ -4269,7 +3997,6 @@
       }, 400));
     });
 
-    // 报告页：划线清单（点文字写批注 / 点 ✕ 取消）由 document 上的委托统一处理
     var cb = $('#gth-report');
     if (cb) refreshQuizHl();
     $$('.gthq-r-item[data-gth-qid] [data-act="collect"]', quizEl).forEach(function (btn) {
@@ -4280,33 +4007,18 @@
     });
   }
 
-  // 交卷时统计对错：未作答的题目既不计入对错，也不累计答错次数、不改变掌握度
   function applyMastery() {
     quiz.list.forEach(function (q) {
       var ans = quiz.answers[q.id];
-      if (!ans || !ans.length) return;   // 未作答：直接跳过，当作「没做过」处理
+      if (!ans || !ans.length) return;
       var ok = ansKey(ans) === ansKey(q.correct_answer);
       var prev = (store.mastered[q.id] && store.mastered[q.id].streak) || 0;
       store.mastered[q.id] = { streak: ok ? prev + 1 : 0, updated: Date.now() };
       bumpWrongCount(q, ok);
-      markPracticed(q.id);   // 「尚未重练」层只认这里的登记
+      markPracticed(q.id);
     });
     saveStore();
   }
-
-  /* ==================== 全真模考：解析页题目收录 ==================== */
-  // mocks 是独立 SPA，模考成绩不进站点错题 API。这里做被动抓取：
-  // 主通路从 Angular ng-repeat 节点的 scope 抠题目对象；兜底通路嗅探 XHR 响应。
-  // 收录进 store.mockQs；答错的并入错题本（fetchByFilter），全部题经「模考收录」来源导出/重练。
-  //
-  // 实测过的解析页题目对象（场次 5158 的 [ng-repeat="item in jiexieSubjects"]）：
-  //   列表态 11 键（subId/result/examPointId/userAnswers/index/id/examPointName/root_id/
-  //   root_name/isPlaying/$$hashKey），题面与 correct_answer 由站点的 initJiexi(id)
-  //   逐题请求 tiku_v2.subject_analysis 才补上（补完 52 键）。
-  //   所以答对题的 correct_answer 是填的（实测 result=1 的 2455010：correct_answer
-  //   与 userAnswers 都是 ["A"]），它不能拿来区分做没做。
-  // 作答没有下划线 user_answer 这个键——只以驼峰 userAnswers 存在。
-  // result 是站点的权威判分，实测三态：0=答错(48) / 1=答对(99) / 2=未做(33)。
 
   var MOCK_QID_KEYS = ['id', 'question_id', 'subject_id', 'qid', 'content_id'];
   var MOCK_STEM_KEYS = ['content', 'stem', 'question', 'title', 'topic'];
@@ -4315,12 +4027,10 @@
   var MOCK_USER_KEYS = ['userAnswers', 'user_answer', 'my_answer', 'self_answer', 'user_ans', 'answer'];
   var MOCK_CORRECT_KEYS = ['correct_answer', 'right_answer', 'true_answer', 'correct', 'answer_right'];
   var MOCK_ANALYSIS_KEYS = ['analysis', 'analysis_shadow', 'explain', 'explanation'];
-  // 科目只认明确的科目字段。站点题目里的 `type` 是题型（type_name 是「单选题」），
-  // 不是科目，拿它兜底会把所有模考题的科目列写成行测。取不到就留 null。
+
   var MOCK_SUBJECT_KEYS = ['content_type', 'subject_type', 'subject'];
   var MOCK_RESULT_KEYS = ['result'];
-  // 模块名：解析页列表态的 examPointName 最可靠（批量收题时列表项就在手，零额外请求），
-  // 题面接口的 exam_point / check_point 兜底。root_name 是卷名不是模块，不参与。
+
   var MOCK_MODULE_KEYS = ['examPointName', 'exam_point', 'check_point'];
 
   function mockModuleOf(raw) {
@@ -4328,7 +4038,6 @@
     return v == null ? '' : String(v).trim();
   }
 
-  // 站点判分归一化：返回 0（答错）/ 1（答对）/ 2（未做），取不到返回 null 交回比对通路
   function mockResultOf(raw) {
     var r = pickKey(raw, MOCK_RESULT_KEYS);
     if (typeof r === 'string' && /^-?\d+$/.test(r)) r = Number(r);
@@ -4339,13 +4048,11 @@
     return /\/wxpage\/tiku\/mocks\/index\.html/.test(location.pathname);
   }
 
-  // 场次 id：hash 形如 #/mocks/baogao/5158/detailv3；防御性取首个 ≥3 位数字段
   function mockExamIdOf() {
     var m = /(\d{3,})/.exec(location.hash || '');
     return m ? m[1] : '';
   }
 
-  // 候选 key 依序取首个非空值（'' / null / undefined 视为空）
   function pickKey(obj, keys) {
     for (var i = 0; i < keys.length; i++) {
       var v = obj[keys[i]];
@@ -4354,7 +4061,6 @@
     return undefined;
   }
 
-  // 题目形状判据：scope 提取与 XHR 嗅探共用，宁缺毋滥
   function looksLikeQuestion(o) {
     if (!o || typeof o !== 'object' || Array.isArray(o)) return false;
     var id = pickKey(o, MOCK_QID_KEYS);
@@ -4366,7 +4072,6 @@
     return (ans !== undefined && ans !== '') || (ana !== undefined && ana !== '');
   }
 
-  // 答案归一化：数组原样；JSON 串解析；裸字符串 "A"/"AC" 保留
   function mockParseAns(v) {
     if (v == null || v === '') return '';
     if (Array.isArray(v)) return v;
@@ -4376,7 +4081,6 @@
     return v;
   }
 
-  // 选项归一化：容忍 JSON 串 / 数组 / 对象映射 / "A. xxx" 字符串等形态
   function mockParseOpt(v) {
     if (v == null || v === '') return [];
     if (typeof v === 'string') {
@@ -4384,7 +4088,7 @@
       try { v = JSON.parse(v); } catch (e) { return []; }
     }
     if (!Array.isArray(v)) {
-      if (typeof v === 'object') {   // {"A":"xxx","B":"yyy"} 形态
+      if (typeof v === 'object') {
         return Object.keys(v).map(function (k) {
           return { label: String(k).toUpperCase(), content: v[k] == null ? '' : String(v[k]) };
         });
@@ -4408,7 +4112,6 @@
     });
   }
 
-  // 把 mocks 页拿到的原始题目对象映射成与站点 API 一致的形状（复用后续导出/重练全链路）
   function mockFieldMap(raw) {
     if (!looksLikeQuestion(raw)) return null;
     var q = {
@@ -4428,7 +4131,6 @@
     return q;
   }
 
-  // 首个抓到的原始样本只打一次日志：字段清单 + 截断 JSON，便于按真实字段收敛候选表
   var mockSampleLogged = false;
   function logMockSample(raw) {
     if (mockSampleLogged) return;
@@ -4451,7 +4153,6 @@
     return out;
   }
 
-  // 主通路：扫描 ng-repeat 节点，从 scope 抠出被迭代对象再识别题目
   function harvestFromScope(root) {
     var ng = getAngular();
     if (!ng) return [];
@@ -4473,10 +4174,8 @@
     return dedupeById(out);
   }
 
-  // 兜底通路：嗅探 XHR 响应里的题目数组（AngularJS $http 走 XHR，可覆盖站点全部数据请求）。
-  // 注意 @run-at document-idle 之前的请求抓不到——解析页数据是点击后才加载的，实际够用。
-  var mockSniffCache = {};    // 题目 id -> 归一化题目
-  var mockSniffOrder = [];    // 写入顺序，超限淘汰最旧
+  var mockSniffCache = {};
+  var mockSniffOrder = [];
   var mockSniffHooked = false;
 
   function mockSniffRemember(q) {
@@ -4499,7 +4198,7 @@
       for (var i = 0; i < j.length; i++) {
         if (j[i] && typeof j[i] === 'object' && looksLikeQuestion(j[i])) hit++;
       }
-      if (j.length && hit / j.length >= 0.6) {   // 题目数组：整组收录，不再下钻
+      if (j.length && hit / j.length >= 0.6) {
         j.forEach(function (o) {
           var q = mockFieldMap(o);
           if (q) { mockSniffRemember(q); logMockSample(o); }
@@ -4543,13 +4242,9 @@
         return origSend.apply(this, arguments);
       };
       mockSniffHooked = true;
-    } catch (e) { /* 沙箱拦截失败时静默降级：仅靠 scope 提取 */ }
+    } catch (e) {  }
   }
 
-  // 收录合并：新题写入；已有题仅在「从未作答 → 拿到作答信息」时补 done/ok。
-  // 答错计数幂等：同场次同一题只计一次（processed 登记在 store.mocks[场次].processed）。
-  // 注：模考题 id 与练习题 id 是否同源未证实——若撞键且内容不同，需改用合成 id
-  //（如 'm'+examId+'_'+qid，配合内容指纹比对），现阶段只 warn 不自动改写。
   function mergeMockQs(list, examId) {
     if (!examId) examId = 'unknown';
     if (!store.mocks[examId]) store.mocks[examId] = { at: Date.now(), processed: {} };
@@ -4560,7 +4255,7 @@
       var k = String(q.id);
       var done, ok;
       if (q.result !== null) {
-        // 未做（2）不算答错：既不进错题本也不计次，只在「模考收录」里留着
+
         done = q.result === 2 ? 0 : 1;
         ok = (q.result === 0 || q.result === 2) ? 0 : 1;
       } else {
@@ -4581,7 +4276,7 @@
         cur = store.mockQs[k];
         added++; changed = true;
       } else {
-        // 已有记录只补两处：未作答 → 拿到作答、无模块 → 拿到模块；题面一律不动
+
         var touched = false;
         if (!cur.done && done) {
           cur.user_answer = q.user_answer;
@@ -4602,11 +4297,10 @@
     return { added: added, wrongNew: wrongNew };
   }
 
-  // mods = 面板上勾的模考模块名，空数组 = 全部
   function mockMatchModule(m, mods) {
     return !mods || !mods.length || mods.indexOf(m.module || MOCK_UNCLS) >= 0;
   }
-  // store.mockQs -> 导出/重练用的题目形状（附 _mock = 场次 id，导出时显示来源）
+
   function mockToList(onlyWrong, mods) {
     var out = [];
     Object.keys(store.mockQs).forEach(function (k) {
@@ -4625,7 +4319,6 @@
   function mockAllList(mods) { return mockToList(false, mods); }
   function mockWrongList(mods) { return mockToList(true, mods); }
 
-  // 模考模块 chips 的候选：只看本地真收到的题，不去对站点的行测考点表（两套名字未必同源）
   function mockModuleOptions() {
     var by = {}, out = [];
     Object.keys(store.mockQs).forEach(function (k) {
@@ -4637,8 +4330,6 @@
     return out;
   }
 
-  // ---- 批量收题：列表态只有判分，题面得逐题问站点接口 ----
-  // 站点自己也是这么补的（mocks 控制器的 initJiexi 打 api/v2/tiku/{examType}/{id}/analysis）。
   var MOCK_COLLECT_CAP = 300;
   var mockCollecting = false;
 
@@ -4652,7 +4343,6 @@
     if (st) st.innerHTML = html;
   }
 
-  // 解析页列表里的题目：列表态 11 个键里就有 id / result / userAnswers，够挑出答错的
   function mockSheetItems() {
     var ng = getAngular();
     if (!ng) return [];
@@ -4674,7 +4364,7 @@
   }
 
   function collectMockWrong() {
-    // 原来这里静默 return：再点一下像没反应，用户只会接着点。要说一句为什么不动
+
     if (mockCollecting) { mockStatus('这一轮还在补题面，等它跑完再点。'); return; }
     var examId = mockExamIdOf();
     var items = mockSheetItems();
@@ -4682,7 +4372,7 @@
     var wrongAll = items.filter(function (it) { return it.result === 0; });
     var need = wrongAll.filter(function (it) {
       var cur = store.mockQs[String(it.id)];
-      return !(cur && cur.content);        // 已经翻到过、题面在册的就不重复抓
+      return !(cur && cur.content);
     }).slice(0, MOCK_COLLECT_CAP);
     if (!need.length) {
       mockStatus('本场答错 <b>' + wrongAll.length + '</b> 题，题面都已收录，不用补。');
@@ -4705,7 +4395,7 @@
       }
       var it = need[i++];
       fetchMockSubject(it.id).then(function (data) {
-        // 判分与模块名取自列表项（题面接口不带这两样），题面取自接口
+
         var raw = Object.assign({}, data || {}, {
           result: it.result, userAnswers: it.userAnswers, examPointName: it.examPointName
         });
@@ -4724,16 +4414,13 @@
     step();
   }
 
-  // ---- mocks 页浮动 UI：右下角按钮 + 收录面板 ----
-  // 「不依赖站点布局」是没得选：报告页实测没有 .question-box / .question-outer / .inner-content
-  // （计数 0），错题页与收藏页那套容器选择器在这页一条都命中不到，能挂的只有 jiexieSubjects 的节点本身。
   var mockPanelBuilt = false;
 
   function buildMocksUI() {
-    if (mockPanelBuilt) return;   // 页面生命周期内只建一次，避免站点重绘导致重复节点
+    if (mockPanelBuilt) return;
     mockPanelBuilt = true;
     GM_addStyle([
-      // 深色浮标的底色走 --gth-primary，别再引 --gth-fg：同值不同令牌，改一处就分叉
+
       '#gth-mock-btn{position:fixed;right:18px;bottom:18px;z-index:100000;display:flex;align-items:center;gap:7px;',
       'height:var(--gth-ctl-h,38px);padding:0 16px;border-radius:999px;',
       'background:var(--gth-primary,#0f172a);color:var(--gth-primary-fg,#f8fafc);font-size:13px;font-weight:600;',
@@ -4786,7 +4473,6 @@
     $('#gth-mock-all', panel).addEventListener('click', collectMockWrong);
   }
 
-  // 观察器回调（refreshPageUI 已 debounce 400ms）：扫描 -> 合并 -> 刷新面板
   function mocksScanTick() {
     if (!isMocksPage()) return;
     buildMocksUI();
@@ -4811,7 +4497,7 @@
   function initMocksUI() {
     hookXhrSniffer();
     buildMocksUI();
-    syncKeyTargets();   // 浮标是 div，mocks 页不走下面那批 gongan 页初始化
+    syncKeyTargets();
     mocksScanTick();
     console.log('[错题助手] 模考助手已注入' + (mockSniffHooked ? '（嗅探已挂）' : '') + '：' + location.href);
   }
@@ -4825,30 +4511,26 @@
     }
   });
 
-  // 批注栏在错题页与收藏页都生效，用 body 上的标记类限定样式作用域
-  // （类名沿用 gth-error，改名会牵动一批 CSS 选择器，没必要）
   function syncRouteClass() {
     document.body.classList.toggle('gth-error', isListRoute());
     syncSourceDefault();
   }
   window.addEventListener('hashchange', function () {
     syncRouteClass();
-    invalidateLoaded();   // 换了路由，缓存的题目列表跟着作废
-    // 离开错题页 / 收藏页时收起助手视图，避免它跟着显示到别的界面上
+    invalidateLoaded();
+
     if (!isListRoute() && viewOn) setView(false);
     refreshPageUI();
   });
 
-  if (isMocksPage()) {          // mocks 页：不进错题面板初始化，只做模考收录
+  if (isMocksPage()) {
     initMocksUI();
     return;
   }
   if (!getToken()) {
     setStatus('未检测到登录 token，请先登录站点后再使用。', 'err');
   }
-  // 首次注入要放在所有定义与 var 之后（早跑会读到还没赋值的 balloonEls，见上面 resize 那行），
-  // 但又排在尾部那几个初始化之前：它们里有 `$('#gth-mode').value` 这种不判空的读法，
-  // 一旦哪天站点改了名，抛错也不该把划线的入口一起带走。
+
   injectListUI();
   injectMenuEntry();
   syncRail();

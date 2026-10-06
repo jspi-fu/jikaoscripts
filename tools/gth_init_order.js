@@ -1,16 +1,4 @@
-/* 尺子：找出「脚本一加载就会读到、但赋值语句还写在后面」的顶层变量。
-   var 只提升声明、不提升赋值，所以这类调用当场拿到 undefined
-   （这一类缺陷守的是什么、当年那次怎么踩的、为什么无头判据看不见，权威出处都在
-   `AGENTS.md` 的「验证」一节；这里只留一把尺子自己的口径。形状：顶层同步的 syncRail()
-   → placeRailItems → syncBalloons 读到 Object.keys(balloonEls)，而 var balloonEls = {} 写在它后面）。
 
-   用法：node tools/gth_init_order.js [脚本路径...]
-   也被 gth_logic_test.js 的 T21 当判据调用。
-
-   口径：把所有函数体（具名的、匿名的）都遮掉，剩下的就是「顶层顺序执行」的代码；
-   那里出现的 name(...) 才算同步入口——所以写在 if / try 块里的调用也算进来。
-   注册成事件监听器或观察器回调的函数不算入口：它们要等本轮同步代码跑完才触发，
-   那时后面的 var 早已赋值，报出来只会把真雷埋进噪音里。 */
 const fs = require('fs');
 const blank = require('./blank_literals');
 
@@ -28,7 +16,6 @@ function report(file, quiet) {
     return text.length - 1;
   }
 
-  // 1) 所有函数体范围（含嵌套的具名函数）
   const bodies = [];
   const anyFn = /function\s*([A-Za-z_$][\w$]*)?\s*\(/g;
   let m;
@@ -40,10 +27,6 @@ function report(file, quiet) {
   const fns = {};
   bodies.forEach(function (x) { if (x.name && !(x.name in fns)) fns[x.name] = x; });
 
-  // 2) 顶层同步文本 = 遮掉「顶层那一层」的函数体。
-  //    注意别把最外层 IIFE 的体也遮了——那层之内才是我们要看的顶层顺序代码；
-  //    遮错会得到「同步入口 0 处 / 判定：绿」这种最坏的假绿。
-  //    depth = 有多少个别的函数体把它整个包住：0 就是最外层那个 IIFE。
   bodies.forEach(function (x) {
     x.depth = bodies.reduce(function (n, y) {
       return n + (y !== x && y.open <= x.open && x.close <= y.close ? 1 : 0);
@@ -58,8 +41,6 @@ function report(file, quiet) {
   });
   const topText = top.join('');
 
-  // 3) 同步入口：顶层文本里出现的具名调用，任意缩进都算。
-  //    `function NAME(` 的定义头不是调用——不排掉的话入口会虚涨到几百，报出一堆假雷。
   const entries = [];
   Object.keys(fns).forEach(function (name) {
     const re = new RegExp('[^\\w$.]' + name.replace(/\$/g, '\\$') + '\\s*\\(', 'g');
@@ -72,13 +53,10 @@ function report(file, quiet) {
     }
   });
 
-  // 4) 顶层赋值：var / let / const NAME =（只看同步文本，函数体里的局部变量不算）
   const vars = {};
   const varRe = /(?:var|let|const)\s+([A-Za-z_$][\w$]*)\s*=/g;
   while ((m = varRe.exec(topText))) if (!(m[1] in vars)) vars[m[1]] = lineOf(m.index);
 
-  // 5) 每个函数「自己体内」的文字：再套一层函数体也遮掉，
-  //    否则点击回调里提到的函数会被当成启动就会跑到（噪音淹没真雷）
   function ownText(name) {
     const f = fns[name];
     if (!f) return '';
