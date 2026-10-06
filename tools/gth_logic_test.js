@@ -80,7 +80,7 @@ const FNS = ['ansKey', 'serverErrCount', 'errCountOf', 'masteredLabel', 'isMaste
   'masteryKey', 'noteFacets', 'noteMatch', 'mergeConcurrent', 'fetchByFilter',
   'hasSiteSrc', 'notesNarrowed', 'norm', 'normMap', 'hlHoldLost', 'migrateHlLost', 'washHlLost',
   'buildExamPointIndex', 'rememberModulesFromPoints',
-  'resumeKeyOld', 'readResume', 'clearResume',
+  'resumeKeyOld', 'readResume', 'clearResume', 'staleResumeKeys', 'strayStorageKeys',
   'fetchXingce', 'buildModuleOptions', 'fetchXingceBy', 'fetchFavoriteXingce',
   'listPath', 'listParams', 'esc', 'hlRowHtml', 'noteIdsWithHl'];
 
@@ -119,7 +119,8 @@ const EXPOSED = [
   'getSaved: function () { return ctx.saved; }',
   'fetchXingce', 'buildModuleOptions', 'fetchFavoriteXingce', 'listPath', 'listParams', 'hlRowHtml', 'noteIdsWithHl', 'pickKey',
   'hlHoldLost', 'migrateHlLost', 'washHlLost', 'buildExamPointIndex', 'rememberModulesFromPoints',
-  'SRC_NAME', 'SRC_KEYS', 'EXPORT_PREFIX', 'resumeKeyOld', 'readResume', 'clearResume'
+  'SRC_NAME', 'SRC_KEYS', 'EXPORT_PREFIX', 'resumeKeyOld', 'readResume', 'clearResume',
+  'staleResumeKeys', 'strayStorageKeys'
 ];
 const EXPOSE = "return {" + EXPOSED.map(function (n) { return n.indexOf(':') >= 0 ? n : n + ': ' + n; }).join(', ') + '};';
 
@@ -605,7 +606,7 @@ async function t16() {
     ['caret.textContent', 0, '朝向由 CSS 跟着 .on 派生，JS 不再往 caret 里写「展开 / 收起」'],
     ['syncKeyTargets();', 3, '键盘可达在观察器刷新与两处初始化里都补了，漏一处就有节点永远点不到'],
     ['busy(btn, ensureLoaded(', 2, '导出两颗按钮真的被 busy 包住，不是只写了个 helper'],
-    ['busy(this, fetchByFilter(', 1, '组卷按钮也走同一条置灰通路'],
+    ['busy(this, fetchByFilter(', 2, '组卷与重扫两处都走同一条置灰通路，点了就不给连点'],
     ['gth-nf-mod-hint', 2, '模块维的来源提示：模板里有一个节点，代码里有开关，两头都在'],
     ["closest('.gth-balloon')", 1, '气球点得开批注框，cursor:pointer 不是假的'],
     // hlRowHtml 把 .t / .n 包在 <div class="bd"> 里，按 parentNode 取到的其实是 .bd，
@@ -639,7 +640,16 @@ async function t16() {
     ['(EXPORT_PREFIX[currentSrc()] || ', 1, '文件名按当前来源取前缀这一处没被抄成第二份'],
     // 取题期间改筛选
     ['var desc0 = filterDesc(f);', 1, '按下那一刻的条件留下来准备比对'],
-    ["toast('筛选在取题期间改过了", 1, '不一致时真的说一句，不是只存了个变量']
+    ["toast('筛选在取题期间改过了", 1, '不一致时真的说一句，不是只存了个变量'],
+    // 底部两颗按钮的接线：说明只待在问号里，长句不塞回按钮文字
+    ["$('#gth-mod-scan').addEventListener('click'", 1, '重扫模块真的绑上了处理器'],
+    ["$('#gth-stray-clean').addEventListener('click'", 1, '清理残留真的绑上了处理器'],
+    ["dayRange: '4', srcs: ['error', 'favorite']", 1, '重扫走「按日期=全部」那一趟，不是逐考点配对的几十次'],
+    ['= strayStorageKeys(names)', 1, '清理真的问这份判据，不是写了两个没人调的函数（数的是调用形，不是定义头）'],
+    ['staleResumeKeys(store.resume)', 1, '旧刷题进度也走同一份判据'],
+    ['class="gth-q"', 2, '两颗按钮各挂一个小问号，说明文字在 title 里'],
+    ['.gth-q{display:inline-flex', 1, '小问号有自己的样式，不是个裸字符'],
+    ['title="把错题本与收藏夹', 1, '重扫的说明挂在问号上，不在按钮文字里']
   ];
   W.forEach(function (p) {
     eq(countOf(p[0]), p[1], 'T20 ' + p[2]);
@@ -901,6 +911,88 @@ async function t16() {
   ].forEach(function (p) {
     ok(body.indexOf(p[0]) >= 0, 'T28 ' + p[1]);
   });
+})();
+
+/* ---------- T29 「清理残留」的两份判据（守的是删数据那一面：可自愈的那代进度被列进去就是丢用户进度，
+   别的 ctx 的在用库被列进去就是丢另一班次的全部笔记与划线——两种都是不可恢复的误伤）---------- */
+
+(function t29() {
+  const m = build();
+  const bothNow = m.srcLabel(['error', 'favorite']);
+  // 现版本能算出的键：按日期、按科目、只勾模考、练习题＋模考混合
+  const cur = [
+    m.SRC_NAME.error + ' · 日期：全部|asc',
+    bothNow + ' · 行政职业能力测试（资料分析）|desc',
+    m.SRC_NAME.mock + '（全部模考题）|asc',
+    m.SRC_NAME.error + ' · 日期：本周 ＋ ' + m.SRC_NAME.mock + '（全部模考题）|asc'
+  ];
+  const healable = m.SRC_NAME.both + ' · 日期：全部|asc';   // 「错题+收藏 · 」那一代，1.10.2 会自愈搬走
+  const ancient = '行政职业能力测试（资料分析）|asc';         // 来源还没进描述那一代，归因不了
+
+  (function () {
+    const r = {};
+    cur.concat([healable, ancient]).forEach(function (k, i) { r[k] = { idx: i, id: i }; });
+    eq(m.staleResumeKeys(r), [ancient],
+      'T29 六条里只列归因不了的那一条：当前命名的与可自愈的都不许列');
+  })();
+  cur.forEach(function (k) {
+    const o = {}; o[k] = { idx: 1 };
+    eq(m.staleResumeKeys(o), [], 'T29 现版本算得出的键不算残留：' + k);
+  });
+  (function () {
+    const o = {}; o[healable] = { idx: 7, id: 88 };
+    eq(m.staleResumeKeys(o), [], 'T29 可自愈的那代不列——列了就是替用户把进度删掉');
+  })();
+  eq(m.staleResumeKeys({ '': { idx: 1 } }), [], 'T29 空键不列：那是随机组卷的占位，不是残留');
+  eq(m.staleResumeKeys(undefined), [], 'T29 整块缺失返回空数组，不抛错');
+  eq(m.staleResumeKeys({}), [], 'T29 空库返回空数组');
+
+  eq(m.strayStorageKeys(['gongan_exam_helper_mingshi']), ['gongan_exam_helper_mingshi'],
+    'T29 已停用脚本留下的整库命中');
+  eq(m.strayStorageKeys(['gongan_tiku_helper_mingshi__bak_l2']), ['gongan_tiku_helper_mingshi__bak_l2'],
+    'T29 排查时产生的历史快照命中');
+  ['gongan_tiku_helper_mingshi', 'gongan_tiku_helper_other', 'gongan_tiku_helper_zhuanshi'].forEach(function (k) {
+    eq(m.strayStorageKeys([k]), [], 'T29 在用的库绝不命中，哪怕那是别的 ctx：' + k);
+  });
+  eq(m.strayStorageKeys(['token', 'gongan2_lang', 'scriptcat.some.key', 'gongan_tiku_helper_backup_notes']), [],
+    'T29 站点自己的键、扩展的键、名字像备份但没有 __bak_ 段的都不命中');
+  eq(m.strayStorageKeys(undefined), [], 'T29 没传名单返回空数组，不抛错');
+  eq(m.strayStorageKeys(['gongan_exam_helper_a', 'gongan_tiku_helper_mingshi', 'gongan_exam_helper_b'])
+      .join('|'), 'gongan_exam_helper_a|gongan_exam_helper_b',
+    'T29 夹着一个在用库时，两个孤儿照样被挑出来、在用的留下');
+})();
+
+/* ---------- T30 两颗按钮的函数体不是空壳（守：T20 只数「绑上了处理器」，把处理器里面掏空它照样绿。
+   这里按原文切出那两段，逐项查真做了该做的事）---------- */
+
+(function t30() {
+  function slice(a, b) {
+    const at = raw.indexOf(a);
+    const end = at < 0 ? -1 : raw.indexOf(b, at);
+    return at >= 0 && end > at ? raw.slice(at, end) : null;
+  }
+  const scan = slice("$('#gth-mod-scan').addEventListener('click'", "$('#gth-stray-clean').addEventListener('click'");
+  ok(!!scan, 'T30 重扫模块的处理器还是这一段');
+  [
+    ['busy(this, fetchByFilter(', 'T30 重扫真的拉站点题目，并在期间把按钮置灰（连点会打出两趟）'],
+    ["mode: 'date', dayRange: '4'", 'T30 重扫按「日期=全部」，不是当天那一档'],
+    ["srcs: ['error', 'favorite']", 'T30 两路都扫：只扫错题本会漏掉收藏里的题'],
+    ['noteIdsWithHl().filter', 'T30 扫完要数出笔记里仍缺模块的题，而不是报个「完成」了事'],
+    ['renderNotesList();', 'T30 重画笔记面板：模块下拉与那条提示都得跟着新登记变'],
+    ["setStatus('重扫失败：'", 'T30 请求失败有话说，按钮不会卡在置灰态']
+  ].forEach(function (p) { ok(scan && scan.indexOf(p[0]) >= 0, 'T30 ' + p[1]); });
+
+  const clean = slice("$('#gth-stray-clean').addEventListener('click'", 'var notesSearchKey');
+  ok(!!clean, 'T30 清理残留的处理器还是这一段');
+  [
+    ['staleResumeKeys(store.resume)', 'T30 旧进度走那份判据，不是随手删 resume 整桶'],
+    ['= strayStorageKeys(names)', 'T30 存储键走那份判据'],
+    ['没有可清理的残留记录', 'T30 无可清理时直说，不空跑一次确认框'],
+    ['if (!confirm(', 'T30 删之前必须过一道确认（写成了无条件 confirm 也算没守）'],
+    ['localStorage.removeItem(', 'T30 确认后真删存储键'],
+    ['delete store.resume[x];', 'T30 确认后真删旧进度记录'],
+    ['saveStore();', 'T30 删过 resume 就落盘，不然下一次写盘又把旧记录带回来']
+  ].forEach(function (p) { ok(clean && clean.indexOf(p[0]) >= 0, 'T30 ' + p[1]); });
 })();
 
 /* ---------- 跑起来 ---------- */

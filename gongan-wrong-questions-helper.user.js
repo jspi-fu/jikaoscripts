@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         上岸村机考系统错题助手
 // @namespace    http://tampermonkey.net/
-// @version      1.10.2
+// @version      1.10.3
 // @description  上岸村机考系统错题整理增强，支持笔记、划线标注、错题重练、一键复制、错题与笔记导出等功能。
 // @author       烨笙
 // @license      MIT
@@ -1474,6 +1474,12 @@
     '.gth-data .gth-hint{margin:11px 0 0;color:#475569}',
     '.gth-data-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}',
     '.gth-data-row .sp{flex:1}',
+    /* 按钮右上角的小问号：说明全文只待在这段的 title 里，按钮本体保持短语——
+       长句写进按钮文字会把那一排撑成两三行。cursor:help 表示这里只是说明，不是又一个动作 */
+    '.gth-q{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;',
+    '  width:14px;height:14px;margin-left:5px;border:1px solid var(--gth-border-strong);border-radius:50%;',
+    '  font-size:9px;font-weight:700;color:var(--gth-muted);vertical-align:2px;cursor:help}',
+    '.gth-btn:hover .gth-q{color:var(--gth-primary)}',
     // 增量导出的两个计数并到一行，「重置增量基线」紧跟着它解释的那两个数，不再甩到 600px 外的右边缘
     '.gth-export-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}',
     // 没载入过题目时 #gth-count 是空的：0 宽的项照样吃一份 gap，会把整行推歪
@@ -1918,6 +1924,10 @@
     '      <div class="gth-data-row">',
     '        <button class="gth-btn" id="gth-backup" title="导出一份含全部题目、笔记、划线与各项记录的 JSON 文件">' + icon('database') + '备份全部数据</button>',
     '        <button class="gth-btn" id="gth-restore" title="从之前备份的 JSON 文件恢复">' + icon('upload') + '恢复备份</button>',
+    '        <button class="gth-btn" id="gth-mod-scan">' + icon('rotate') + '重扫模块' +
+    '          <span class="gth-q" title="把错题本与收藏夹里的题按日期全部过一遍，给没登记上模块的题目补上模块名。需要联网拉几页题目，几秒钟。模考收录的题自带模块；公安专业知识的题按规则留在「模块未记录」。">?</span></button>',
+    '        <button class="gth-btn" id="gth-stray-clean">' + icon('listChecks') + '清理残留' +
+    '          <span class="gth-q" title="删掉三类不再被读取的记录：已停用脚本留下的整库、排查时产生的历史快照、命名规则变更前留下的旧刷题进度。笔记、划线、掌握状态与已收录的题目都不受影响，不可恢复。">?</span></button>',
     '        <span class="sp"></span>',
     '        <button class="gth-btn danger" id="gth-wipe" title="删掉本机全部笔记、划线、掌握状态与收录记录">' + icon('trash') + '清空本地数据</button>',
     '        <input type="file" id="gth-file" accept="application/json,.json" hidden>',
@@ -2538,6 +2548,41 @@
     renderHistory();
     updateExportHint();
     setStatus('已清空本地数据', 'ok');
+  });
+
+  /* 这两件事的耗时与不可逆程度差很远——重扫只往库里加登记、要联网几秒，清理是删了取不回来——
+     所以分成两次点击，不合成一个「一键整理」。 */
+  $('#gth-mod-scan').addEventListener('click', function () {
+    setStatus('正在按日期载入错题本与收藏夹…');
+    busy(this, fetchByFilter({ mode: 'date', dayRange: '4', srcs: ['error', 'favorite'] }, 0))
+      .then(function (list) {
+        var gap = noteIdsWithHl().filter(function (id) { return !moduleOf(id); }).length;
+        setStatus('这一趟过了 ' + list.length + ' 题。' + (gap
+          ? '笔记里仍差 ' + gap + ' 题：这些题已不在错题本与收藏夹里，接口取不到它们的考点。'
+          : '笔记里的题目模块已齐。'), 'ok');
+        renderNotesList();   // 模块下拉与那条提示按新登记的重画
+      })
+      .catch(function (e) { setStatus('重扫失败：' + e.message, 'err'); });
+  });
+
+  $('#gth-stray-clean').addEventListener('click', function () {
+    var names = [];
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k) names.push(k);
+    }
+    var keys = strayStorageKeys(names), old = staleResumeKeys(store.resume);
+    if (!keys.length && !old.length) { setStatus('没有可清理的残留记录', 'ok'); return; }
+    var kb = keys.reduce(function (a, x) { return a + (localStorage.getItem(x) || '').length; }, 0) / 1024;
+    var detail = keys.map(function (x) { return '· 存储键 ' + x; })
+      .concat(old.map(function (x) { return '· 旧刷题进度 ' + x; })).join('\n');
+    if (!confirm('将删掉 ' + (keys.length + old.length) + ' 项不再被读取的记录' +
+      (keys.length ? '（存储键约 ' + kb.toFixed(1) + ' KB）' : '') +
+      '，不可恢复：\n\n' + detail + '\n\n确定继续？')) return;
+    keys.forEach(function (x) { localStorage.removeItem(x); });
+    old.forEach(function (x) { delete store.resume[x]; });
+    saveStore();
+    setStatus('已清掉 ' + (keys.length + old.length) + ' 项残留记录', 'ok');
   });
 
   var notesSearchKey = '';
@@ -3823,6 +3868,24 @@
     delete store.resume[key];
     delete store.resume[old];
     saveStore();
+  }
+
+  /* 现版本算不出来的续刷键。filterDesc 现在拼出的键一定带来源段「 · 」（按日期与按科目都拼），
+     或者整串以「模考收录」开头（只勾模考时没有站点来源段）——两种都不满足的，是「来源还没进
+     描述」那一代留下的：键里没记来源，搬到错题本 / 收藏夹 / 合并哪一种都是猜，所以不自动搬，
+     只交给「清理残留」删。注意可自愈的那代（「错题+收藏 · …」）含「 · 」，不在这里命中。 */
+  function staleResumeKeys(resume) {
+    return Object.keys(resume || {}).filter(function (k) {
+      return k && k.indexOf(' · ') < 0 && k.indexOf(SRC_NAME.mock) !== 0;
+    });
+  }
+
+  /* 不再被任何脚本读取的存储键：已停用的机考助手留下的整库，以及排查时产生的历史快照。
+     在用的库（gongan_tiku_helper_<ctx>，没有 __bak_ 段）与别的 ctx 的在用的库都落不进这两个模式。 */
+  function strayStorageKeys(names) {
+    return (names || []).filter(function (k) {
+      return /^gongan_exam_helper_/.test(k) || /^gongan_tiku_helper_[\w-]+__bak_/.test(k);
+    });
   }
 
   function saveResume(key, idx, id, answered) {
