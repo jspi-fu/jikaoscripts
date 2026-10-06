@@ -120,6 +120,10 @@ font-awesome 4.7 三套全局样式，它们占着 `.caret` `.label` `.table` `.
 - 「模块」= 行测考点树 `exampoint_list` 的顶层节点；`exam_point` 是树里某个节点的 id，走一遍树记
   「后代 → 所属顶层」即可（实测树 219 个节点、顶层 8 个模块名）。同名模块挂在多个分类下时按名合并成一组请求。
 - 行测考点在 `subcategory_list` 的下一级，站点模板只渲染这一级（更上的「试卷分类」在模板里已被注释掉）。
+- **只有 `fetchSubcategory()` 会填 `examPointModule`**（行测两条路和 `loadModules` 都走它）；按日期的
+  `pagedFetch` 与收藏的 flat 那条**不会填**。任何靠 `exam_point` 换模块名的动作必须先 `ensureExamPointIndex()`，
+  否则 `rememberModulesFromPoints` 第一行就 return 0——几百题拉回来一条都登记不上，界面只看着像「扫过了」。
+  「重扫模块」这颗按钮当初就是这么白跑一趟，而状态栏把原因错写成「题目已不在列表里」。
 - 公专的考点 id 会不会落进行测树，本机 0 道公专错题测不出；真撞上只多挂一个站点考点名，属有意接受。
 - 模考解析页：列表态 scope 只有 11 个键（含 `result`/`examPointId`/`userAnswers`/`examPointName`/
   `root_name`/`$$hashKey`），题面与 `correct_answer` 要逐题打 `api/v2/tiku/{examType}/{id}/analysis` 才补得上（补完 52 键）。

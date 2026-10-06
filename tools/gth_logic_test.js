@@ -67,7 +67,7 @@ const FNS = ['ansKey', 'serverErrCount', 'errCountOf', 'masteredLabel', 'isMaste
   'masteryKey', 'noteFacets', 'noteMatch', 'mergeConcurrent', 'fetchByFilter',
   'hasSiteSrc', 'notesNarrowed', 'norm', 'normMap', 'hlHoldLost', 'migrateHlLost', 'washHlLost',
   'buildExamPointIndex', 'rememberModulesFromPoints',
-  'resumeKeyOld', 'readResume', 'clearResume', 'staleResumeKeys', 'strayStorageKeys',
+  'resumeKeyOld', 'readResume', 'clearResume', 'staleResumeKeys', 'strayStorageKeys', 'ensureExamPointIndex',
   'fetchXingce', 'buildModuleOptions', 'fetchXingceBy', 'fetchFavoriteXingce',
   'listPath', 'listParams', 'esc', 'hlRowHtml', 'noteIdsWithHl'];
 
@@ -83,7 +83,7 @@ const PRELUDE = [
   'var getCommodity = function () { return Promise.resolve({ content_id: 7, id: 8 }); };',
   'var fetchErrors = function (f, limit) { ctx.calls.push(["error", f]); return Promise.resolve(ctx.errors || []); };',
   'var fetchFavorites = function (f) { ctx.calls.push(["favorite", f]); return Promise.resolve(ctx.favorites || []); };',
-  'var fetchSubcategory = function () { return Promise.resolve(ctx.subcategory || []); };',
+  'var fetchSubcategory = function () { ctx.sub.push(1); return Promise.resolve(ctx.subcategory || []); };',
   'var normalize = function (q) { return q; };',
   'var onProgress = null;',
   'var $ = function (sel) { return (ctx.el || {})[sel] || null; };',
@@ -105,7 +105,7 @@ const EXPOSED = [
   'fetchXingce', 'buildModuleOptions', 'fetchFavoriteXingce', 'listPath', 'listParams', 'hlRowHtml', 'noteIdsWithHl', 'pickKey',
   'hlHoldLost', 'migrateHlLost', 'washHlLost', 'buildExamPointIndex', 'rememberModulesFromPoints',
   'SRC_NAME', 'SRC_KEYS', 'EXPORT_PREFIX', 'resumeKeyOld', 'readResume', 'clearResume',
-  'staleResumeKeys', 'strayStorageKeys'
+  'staleResumeKeys', 'strayStorageKeys', 'ensureExamPointIndex'
 ];
 const EXPOSE = "return {" + EXPOSED.map(function (n) { return n.indexOf(':') >= 0 ? n : n + ': ' + n; }).join(', ') + '};';
 
@@ -122,7 +122,7 @@ function build(ctx) {
     EXPOSE;
   try {
     const api = new Function('ctx', body)(Object.assign({
-      store: {}, warns: [], status: [], saved: 0, invalidated: 0, api: [], alerts: [], calls: [],
+      store: {}, warns: [], status: [], saved: 0, invalidated: 0, api: [], sub: [], alerts: [], calls: [],
       apiResult: function () { return Promise.resolve({ subject_list: [] }); }
     }, ctx || {}));
 
@@ -540,7 +540,10 @@ async function t16() {
     ['caret.textContent', 0, '朝向由 CSS 跟着 .on 派生，JS 不再往 caret 里写「展开 / 收起」'],
     ['syncKeyTargets();', 3, '键盘可达在观察器刷新与两处初始化里都补了，漏一处就有节点永远点不到'],
     ['busy(btn, ensureLoaded(', 2, '导出两颗按钮真的被 busy 包住，不是只写了个 helper'],
-    ['busy(this, fetchByFilter(', 2, '组卷与重扫两处都走同一条置灰通路，点了就不给连点'],
+    ['busy(this, fetchByFilter(', 1, '组卷按钮走同一条置灰通路'],
+    ['busy(this, ensureExamPointIndex(', 1, '重扫整条链（先取考点表、再拉题）都包在置灰里'],
+    ['return examPointModule ? Promise.resolve(examPointModule) : fetchSubcategory()', 1,
+      '有索引就不重复拉表，没有才打一次 subcategory'],
     ['gth-nf-mod-hint', 2, '模块维的来源提示：模板里有一个节点，代码里有开关，两头都在'],
     ["closest('.gth-balloon')", 1, '气球点得开批注框，cursor:pointer 不是假的'],
 
@@ -709,8 +712,12 @@ async function t16() {
     eq(st.qModule['7'], '资料分析', 'T25 先登记的模块名保持不变');
     eq(m.rememberModulesFromPoints([{ id: 10 }, { id: null, exam_point: 41774 }, null]), 0,
       'T25 缺 exam_point / 缺 id / 空项都跳过');
-    eq(build({ store: mkStore() }).rememberModulesFromPoints([{ id: 7, exam_point: 41861 }]), 0,
-      'T25 考点表还没拿到时一条都不登记（不拿 id 当模块名写进去）');
+    (function () {
+      var r;
+      try { r = build({ store: mkStore() }).rememberModulesFromPoints([{ id: 7, exam_point: 41861 }]); }
+      catch (e) { r = '抛错了：' + e.message; }
+      eq(r, 0, 'T25 考点表还没拿到时一条都不登记，而且不许抛错（抛错说明那道 return 0 的守卫被拆了）');
+    })();
   })();
 })();
 
@@ -871,10 +878,13 @@ async function t16() {
   const scan = slice("$('#gth-mod-scan').addEventListener('click'", "$('#gth-stray-clean').addEventListener('click'");
   ok(!!scan, 'T30 重扫模块的处理器还是这一段');
   [
-    ['busy(this, fetchByFilter(', 'T30 重扫真的拉站点题目，并在期间把按钮置灰（连点会打出两趟）'],
-    ["mode: 'date', dayRange: '4'", 'T30 重扫按「日期=全部」，不是当天那一档'],
+    ['ensureExamPointIndex()', 'T30 重扫先确保考点表在手——按日期那条路自己不会拉 subcategory，没表就一条都登记不上'],
+    ['busy(this, ensureExamPointIndex(', 'T30 整条重扫链包在置灰里：先取表、后拉题，中途不给连点'],
+    ['return fetchByFilter(', 'T30 索引到手之后才按日期拉题'],
+    ["dayRange: '4'", 'T30 重扫按「日期=全部」，不是当天那一档'],
     ["srcs: ['error', 'favorite']", 'T30 两路都扫：只扫错题本会漏掉收藏里的题'],
-    ['noteIdsWithHl().filter', 'T30 扫完要数出笔记里仍缺模块的题，而不是报个「完成」了事'],
+    ['noteIdsWithHl().filter', 'T30 扫完要数出笔记与划线里仍缺模块的题，而不是报个「完成」了事'],
+    ['新登记 ', 'T30 状态栏要报「新登记 N 条」：N=0 就说明问题出在换不出模块名，不在题目不在列表里'],
     ['renderNotesList();', 'T30 重画笔记面板：模块下拉与那条提示都得跟着新登记变'],
     ["setStatus('重扫失败：'", 'T30 请求失败有话说，按钮不会卡在置灰态']
   ].forEach(function (p) { ok(scan && scan.indexOf(p[0]) >= 0, 'T30 ' + p[1]); });
@@ -892,10 +902,26 @@ async function t16() {
   ].forEach(function (p) { ok(clean && clean.indexOf(p[0]) >= 0, 'T30 ' + p[1]); });
 })();
 
+async function t31() {
+  const sub = [{ id: 11, name: '资料分析', exampoint_list: [{ id: 111, name: '数字推理' }] }];
+
+  const seen1 = [];
+  const m1 = build({ store: mkStore(), subcategory: sub, sub: seen1 });
+  await m1.ensureExamPointIndex();
+  eq(seen1.length, 1, 'T31 手里没有考点索引时，重扫这条链先打一次考点表（按日期那条路自己不会拉 subcategory）');
+
+  const seen2 = [];
+  const m2 = build({ store: mkStore(), subcategory: sub, sub: seen2, examPointModule: { '111': '资料分析' } });
+  const got = await m2.ensureExamPointIndex();
+  eq(seen2.length, 0, 'T31 索引已在手时一次都不再拉表，重扫不该每回多打一个请求');
+  eq(got && got['111'], '资料分析', 'T31 把现有索引交回调用方，别让调用方自己猜拉没拉到');
+}
+
 (async function main() {
   await t45();
   await t13();
   await t16();
+  await t31();
   if (fails.length) {
     console.log('[X] ' + fails.length + ' 条判据没过（' + pass + ' 条过）：');
     fails.forEach(function (f) { console.log('    · ' + f); });

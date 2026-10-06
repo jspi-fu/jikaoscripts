@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         上岸村机考系统错题助手
 // @namespace    http://tampermonkey.net/
-// @version      1.10.3
+// @version      1.10.4
 // @description  上岸村机考系统错题整理增强，支持笔记、划线标注、错题重练、一键复制、错题与笔记导出等功能。
 // @author       烨笙
 // @license      MIT
@@ -956,6 +956,12 @@
         examPointModule = buildExamPointIndex(list);
         return list;
       });
+  }
+
+  function ensureExamPointIndex() {
+    return examPointModule ? Promise.resolve(examPointModule) : fetchSubcategory().then(function () {
+      return examPointModule;
+    });
   }
 
   var CRC_TABLE = (function () {
@@ -2376,16 +2382,18 @@
   });
 
   $('#gth-mod-scan').addEventListener('click', function () {
-    setStatus('正在按日期载入错题本与收藏夹…');
-    busy(this, fetchByFilter({ mode: 'date', dayRange: '4', srcs: ['error', 'favorite'] }, 0))
-      .then(function (list) {
-        var gap = noteIdsWithHl().filter(function (id) { return !moduleOf(id); }).length;
-        setStatus('这一趟过了 ' + list.length + ' 题。' + (gap
-          ? '笔记里仍差 ' + gap + ' 题：这些题已不在错题本与收藏夹里，接口取不到它们的考点。'
-          : '笔记里的题目模块已齐。'), 'ok');
-        renderNotesList();
-      })
-      .catch(function (e) { setStatus('重扫失败：' + e.message, 'err'); });
+    var before = Object.keys(store.qModule || {}).length;
+    setStatus('正在取行测考点表…');
+    busy(this, ensureExamPointIndex().then(function () {
+      setStatus('正在按日期载入错题本与收藏夹…');
+      return fetchByFilter({ mode: 'date', dayRange: '4', srcs: ['error', 'favorite'] }, 0);
+    })).then(function (list) {
+      var gap = noteIdsWithHl().filter(function (id) { return !moduleOf(id); }).length;
+      setStatus('这一趟过了 ' + list.length + ' 题，新登记 ' +
+        (Object.keys(store.qModule || {}).length - before) + ' 条模块。' +
+        (gap ? '笔记与划线里还有 ' + gap + ' 题没有模块名。' : '笔记与划线的题目模块已齐。'), 'ok');
+      renderNotesList();
+    }).catch(function (e) { setStatus('重扫失败：' + e.message, 'err'); });
   });
 
   $('#gth-stray-clean').addEventListener('click', function () {
