@@ -218,6 +218,7 @@
     if (!data.mocks) data.mocks = {};
     if (!data.practiced) data.practiced = {};
     if (!data.qModule) data.qModule = {};
+    if (!data.qSrc) data.qSrc = {};
     migrateExported(data);
     var hlLostCleared = migrateHlLost(data);
     if (hlLostCleared) console.log('[错题助手] 已撤掉 ' + hlLostCleared + ' 条误判的「划线已失效」标记');
@@ -293,6 +294,12 @@
 
     var qm = data.qModule || (data.qModule = {}), fqm = fresh.qModule || {};
     Object.keys(fqm).forEach(function (k) { if (!qm[k] && fqm[k]) qm[k] = fqm[k]; });
+
+    var qs = data.qSrc || (data.qSrc = {}), fqs = fresh.qSrc || {};
+    Object.keys(fqs).forEach(function (k) {
+      if (!qs[k]) qs[k] = fqs[k];
+      else if (qs[k] !== fqs[k]) qs[k] = 'both';
+    });
     return data;
   }
 
@@ -548,7 +555,7 @@
       color: color === 'red' ? 'red' : 'yellow',
       at: Date.now(),
       snap: it ? stripHtml(it.content || '').slice(0, 240) : '',
-      subject: it ? it.content_type : null
+      subject: subjectOf(it)
     };
     if (!store.highlights[qid]) store.highlights[qid] = [];
     store.highlights[qid].push(rec);
@@ -675,6 +682,43 @@
       if (!q || q.id == null || q.exam_point == null) return;
       var m = examPointModule[String(q.exam_point)];
       if (m && rememberModule(q.id, m)) n++;
+    });
+    if (n) saveStore();
+    return n;
+  }
+
+  function sweepFacets(siteList, zyList, index) {
+    var zy = {}, subjects = {}, srcs = {};
+    (zyList || []).forEach(function (q) { if (q && q.id != null) zy[String(q.id)] = 1; });
+    (siteList || []).concat(zyList || []).forEach(function (q) {
+      if (!q || q.id == null) return;
+      var id = String(q.id);
+      if (q._src) srcs[id] = q._src;
+      if (zy[id]) { subjects[id] = SUBJ_ZY; return; }
+      if (index && index[String(q.exam_point)]) subjects[id] = SUBJ_XC;
+    });
+    return { subjects: subjects, srcs: srcs };
+  }
+
+  function rememberSources(srcs) {
+    if (!store.qSrc) store.qSrc = {};
+    var n = 0;
+    Object.keys(srcs || {}).forEach(function (id) {
+      var cur = store.qSrc[id], v = srcs[id];
+      var merged = !cur ? v : (cur === v ? cur : 'both');
+      if (merged !== cur) { store.qSrc[id] = merged; n++; }
+    });
+    if (n) saveStore();
+    return n;
+  }
+
+  function backfillSubject(subjects) {
+    var n = 0;
+    Object.keys(subjects || {}).forEach(function (id) {
+      var s = subjects[id], note = store.notes[id];
+      if (note && note.subject == null) { note.subject = s; n++; }
+      var hls = store.highlights[id];
+      if (hls && hls.length && hls[0].subject == null) { hls[0].subject = s; n++; }
     });
     if (n) saveStore();
     return n;
@@ -923,19 +967,27 @@
     var srcs = srcList(f);
     var wantErr = srcs.indexOf('error') >= 0, wantFav = srcs.indexOf('favorite') >= 0;
     var mods = f.mock_modules || [];
+    function tag(list, src) {
+      (list || []).forEach(function (q) { if (q) q._src = src; });
+      return list;
+    }
     var site = (!wantErr && !wantFav) ? Promise.resolve([])
       : (wantErr && wantFav) ? Promise.all([fetchErrors(f, limit), fetchFavorites(f)])
           .then(function (r) {
-            var seen = new Set(), out = [];
-            r[0].concat(r[1]).forEach(function (q) {
-              if (!q || q.id == null || seen.has(q.id)) return;
-              seen.add(q.id);
-              out.push(q);
-            });
+            var by = {}, out = [];
+            function take(arr, src) {
+              (arr || []).forEach(function (q) {
+                if (!q || q.id == null) return;
+                var k = String(q.id), p = by[k];
+                if (p) { if (p._src !== src) p._src = 'both'; return; }
+                q._src = src; by[k] = q; out.push(q);
+              });
+            }
+            take(r[0], 'error'); take(r[1], 'favorite');
             return out;
           })
-      : wantErr ? fetchErrors(f, limit)
-      : fetchFavorites(f);
+      : wantErr ? fetchErrors(f, limit).then(function (l) { return tag(l, 'error'); })
+      : fetchFavorites(f).then(function (l) { return tag(l, 'favorite'); });
     return site.then(function (list) {
 
       rememberModulesFromPoints(list);
@@ -1094,12 +1146,18 @@
     return zipStore(encodedFiles);
   }
 
+  function subjectForExport(q) {
+    if (q && q.content_type != null) return q.content_type;
+    var f = noteFacets(q && q.id);
+    return f.subj === 'x' ? null : Number(f.subj);
+  }
+
   function toRows(list) {
     return list.map(function (q, i) {
       return [
         i + 1,
-        SUBJECT_NAME[q.content_type] || '',
-        q._mock ? '模考#' + q._mock : '练习',
+        SUBJECT_NAME[subjectForExport(q)] || '',
+        q._mock ? '模考#' + q._mock : (SRC_LIST_LABEL[q._src] || '练习'),
         stripHtml(q.material),
         stripHtml(q.content),
         (q.opt || []).map(function (o) { return o.label + '. ' + stripHtml(o.content); }).join('\n'),
@@ -1198,7 +1256,8 @@
       mockQs: store.mockQs,
       mocks: store.mocks,
       practiced: store.practiced,
-      qModule: store.qModule
+      qModule: store.qModule,
+      qSrc: store.qSrc
     };
     return new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
   }
@@ -1243,6 +1302,7 @@
     if (j.mocks) store.mocks = j.mocks;
     if (j.practiced) store.practiced = j.practiced;
     if (j.qModule) store.qModule = j.qModule;
+    if (j.qSrc) store.qSrc = j.qSrc;
     saveStore();
     refreshBadges();
     renderNotesList();
@@ -1764,6 +1824,9 @@
     '        <select id="gth-nf-src" class="gth-select">',
     '          <option value="">全部来源</option>',
     '          <option value="site">练习题</option>',
+    '          <option value="error">练习题 · 错题本</option>',
+    '          <option value="favorite">练习题 · 收藏夹</option>',
+    '          <option value="both">练习题 · 两处都有</option>',
     '          <option value="mock">模考收录</option>',
     '        </select>',
     '        <select id="gth-nf-mast" class="gth-select">',
@@ -1795,7 +1858,7 @@
     '        <button class="gth-btn" id="gth-backup" title="导出一份含全部题目、笔记、划线与各项记录的 JSON 文件">' + icon('database') + '备份全部数据</button>',
     '        <button class="gth-btn" id="gth-restore" title="从之前备份的 JSON 文件恢复">' + icon('upload') + '恢复备份</button>',
     '        <button class="gth-btn" id="gth-mod-scan">' + icon('rotate') + '重扫模块' +
-    '          <span class="gth-q" title="把错题本与收藏夹里的题按日期全部过一遍，给没登记上模块的题目补上模块名。需要联网拉几页题目，几秒钟。模考收录的题自带模块；公安专业知识的题按规则留在「模块未记录」。">?</span></button>',
+    '          <span class="gth-q" title="先取行测考点表，再按日期过一遍错题本与收藏夹、按科目过一遍公专题目，给笔记与划线的题目补上模块、科目和来源。需要联网拉几页题目，几秒钟。已有的值不覆盖，只补空着的地方。">?</span></button>',
     '        <button class="gth-btn" id="gth-stray-clean">' + icon('listChecks') + '清理残留' +
     '          <span class="gth-q" title="删掉三类不再被读取的记录：已停用脚本留下的整库、排查时产生的历史快照、命名规则变更前留下的旧刷题进度。笔记、划线、掌握状态与已收录的题目都不受影响，不可恢复。">?</span></button>',
     '        <span class="sp"></span>',
@@ -1844,6 +1907,7 @@
 
   var SRC_KEYS = ['error', 'favorite', 'mock'];
   var SRC_NAME = { error: '错题本', favorite: '收藏夹', both: '错题+收藏', mock: '模考收录' };
+  var SRC_LIST_LABEL = { error: '错题本', favorite: '收藏夹', both: '错题本＋收藏夹' };
 
   function filterDesc(f) {
     var srcs = srcList(f);
@@ -2055,7 +2119,7 @@
     return {
       subj: subj == null ? 'x' : String(subj),
       mod: moduleOf(id) || MOCK_UNCLS,
-      src: store.mockQs[id] ? 'mock' : 'site',
+      src: store.mockQs[id] ? 'mock' : ((store.qSrc && store.qSrc[id]) || 'site'),
       mast: masteryKey(id),
       hasNote: !!n.text,
       hasHl: hls.length > 0
@@ -2065,7 +2129,7 @@
   function noteMatch(r, nf) {
     if (nf.subj && r.subj !== nf.subj) return false;
     if (nf.mod && r.mod !== nf.mod) return false;
-    if (nf.src && r.src !== nf.src) return false;
+    if (nf.src && !(nf.src === 'site' ? r.src !== 'mock' : r.src === nf.src)) return false;
     if (nf.mast && r.mast !== nf.mast) return false;
     if (nf.cont === 'note' && !r.hasNote) return false;
     if (nf.cont === 'hl' && !r.hasHl) return false;
@@ -2346,7 +2410,8 @@
     var nHis = (store.history || []).length;
     var nRes = Object.keys(store.resume || {}).length;
     var nMock = Object.keys(store.mockQs || {}).length;
-    var nAux = Object.keys(store.practiced || {}).length + Object.keys(store.qModule || {}).length;
+    var nAux = Object.keys(store.practiced || {}).length + Object.keys(store.qModule || {}).length +
+      Object.keys(store.qSrc || {}).length;
     if (!nNote && !nStat && !nExp && !nHis && !nRes && !nMock && !nAux) { setStatus('本地数据已为空', ''); return; }
     if (!confirm(
       '将删除本脚本存在此浏览器中的全部数据：\n' +
@@ -2370,6 +2435,7 @@
     store.mocks = {};
     store.practiced = {};
     store.qModule = {};
+    store.qSrc = {};
     selectedMockModules.length = 0;
     renderMockChips();
     saveStore();
@@ -2382,16 +2448,28 @@
   });
 
   $('#gth-mod-scan').addEventListener('click', function () {
-    var before = Object.keys(store.qModule || {}).length;
+    var beforeMod = Object.keys(store.qModule || {}).length;
+    var siteList = [];
     setStatus('正在取行测考点表…');
     busy(this, ensureExamPointIndex().then(function () {
       setStatus('正在按日期载入错题本与收藏夹…');
       return fetchByFilter({ mode: 'date', dayRange: '4', srcs: ['error', 'favorite'] }, 0);
-    })).then(function (list) {
-      var gap = noteIdsWithHl().filter(function (id) { return !moduleOf(id); }).length;
-      setStatus('这一趟过了 ' + list.length + ' 题，新登记 ' +
-        (Object.keys(store.qModule || {}).length - before) + ' 条模块。' +
-        (gap ? '笔记与划线里还有 ' + gap + ' 题没有模块名。' : '笔记与划线的题目模块已齐。'), 'ok');
+    }).then(function (list) {
+      siteList = list;
+      setStatus('正在按科目载入公专题目…');
+      return fetchByFilter({ mode: 'subject', subject: SUBJ_ZY, srcs: ['error', 'favorite'] }, 0);
+    })).then(function (zyList) {
+      var f = sweepFacets(siteList, zyList, examPointModule);
+      var nSrc = rememberSources(f.srcs);
+      var nSubj = backfillSubject(f.subjects);
+      var all = noteIdsWithHl();
+      var gap = all.filter(function (id) { return !moduleOf(id); }).length;
+      var noSubj = all.filter(function (id) { return noteFacets(id).subj === 'x'; }).length;
+      setStatus('按日期过了 ' + siteList.length + ' 题，按科目过了 ' + zyList.length + ' 题；新登记 ' +
+        (Object.keys(store.qModule || {}).length - beforeMod) + ' 条模块、' + nSubj + ' 条科目、' +
+        nSrc + ' 条来源。' + (gap || noSubj
+          ? '笔记与划线里还缺 模块 ' + gap + ' 题、科目 ' + noSubj + ' 题。'
+          : '笔记与划线的模块与科目已齐。'), 'ok');
       renderNotesList();
     }).catch(function (e) { setStatus('重扫失败：' + e.message, 'err'); });
   });
@@ -2713,7 +2791,7 @@
     $('[data-act="save"]', el).addEventListener('click', function () {
       setNote(item.id, ta.value.trim(), {
         snapshot: stripHtml(item.content).slice(0, 240),
-        subject: item.content_type
+        subject: subjectOf(item)
       });
       renderAside(el, item);
       refreshBadges();
@@ -4000,7 +4078,7 @@
         for (var i = 0; i < quiz.list.length; i++) if (String(quiz.list[i].id) === ta.dataset.note) { q2 = quiz.list[i]; break; }
         setNote(ta.dataset.note, ta.value.trim(), {
           snapshot: q2 ? stripHtml(q2.content || '').slice(0, 240) : '',
-          subject: q2 ? q2.content_type : null
+          subject: subjectOf(q2)
         });
       }, 400));
     });
@@ -4341,9 +4419,28 @@
   var MOCK_COLLECT_CAP = 300;
   var mockCollecting = false;
 
+  function examTypeFrom(search, hash) {
+    var m = /exam_type=(\d+)/.exec(search || '') || /exam_type=(\d+)/.exec(hash || '');
+    return m ? Number(m[1]) : null;
+  }
+
+  function subjectFromUrl(search, hash) {
+    var t = examTypeFrom(search, hash);
+    return (t === SUBJ_XC || t === SUBJ_ZY) ? t : null;
+  }
+
+  function routeExamType() {
+    return isListRoute() ? subjectFromUrl(location.search, location.hash) : null;
+  }
+
+  function subjectOf(it) {
+    var t = it ? it.content_type : null;
+    return t != null ? t : routeExamType();
+  }
+
   function mockExamType() {
-    var m = /exam_type=(\d+)/.exec(location.search || '') || /exam_type=(\d+)/.exec(location.hash || '');
-    return m ? m[1] : '1';
+    var t = examTypeFrom(location.search, location.hash);
+    return t == null ? '1' : String(t);
   }
 
   function mockStatus(html) {

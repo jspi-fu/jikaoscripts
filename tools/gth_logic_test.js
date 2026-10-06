@@ -55,7 +55,7 @@ const CONSTS = ['SUBJ_ZY', 'SUBJ_XC', 'SUBJECT_NAME', 'DAY_RANGES', 'MASTER_STRE
   'MOCK_QID_KEYS', 'MOCK_STEM_KEYS', 'MOCK_MAT_KEYS', 'MOCK_OPT_KEYS', 'MOCK_USER_KEYS',
   'MOCK_CORRECT_KEYS', 'MOCK_ANALYSIS_KEYS', 'MOCK_SUBJECT_KEYS', 'MOCK_RESULT_KEYS',
   'MOCK_MODULE_KEYS', 'selectedModules', 'selectedMockModules', 'practiceSrcs',
-  'notesFilter', 'notesSearchKey', 'examPointModule'];
+  'notesFilter', 'notesSearchKey', 'examPointModule', 'SRC_LIST_LABEL'];
 
 const FNS = ['ansKey', 'serverErrCount', 'errCountOf', 'masteredLabel', 'isMastered',
   'bumpWrongCount', 'markPracticed', 'isPracticed', 'moduleOf', 'rememberModule',
@@ -68,6 +68,8 @@ const FNS = ['ansKey', 'serverErrCount', 'errCountOf', 'masteredLabel', 'isMaste
   'hasSiteSrc', 'notesNarrowed', 'norm', 'normMap', 'hlHoldLost', 'migrateHlLost', 'washHlLost',
   'buildExamPointIndex', 'rememberModulesFromPoints',
   'resumeKeyOld', 'readResume', 'clearResume', 'staleResumeKeys', 'strayStorageKeys', 'ensureExamPointIndex',
+  'examTypeFrom', 'subjectFromUrl', 'routeExamType', 'sweepFacets', 'rememberSources', 'backfillSubject',
+  'subjectForExport',
   'fetchXingce', 'buildModuleOptions', 'fetchXingceBy', 'fetchFavoriteXingce',
   'listPath', 'listParams', 'esc', 'hlRowHtml', 'noteIdsWithHl'];
 
@@ -87,6 +89,8 @@ const PRELUDE = [
   'var normalize = function (q) { return q; };',
   'var onProgress = null;',
   'var $ = function (sel) { return (ctx.el || {})[sel] || null; };',
+  'var location = ctx.location || { search: "", hash: "" };',
+  'var isListRoute = function () { return !!ctx.listRoute; };',
   'var $$ = function () { return []; };',
   'var localStorage = { getItem: function () { return ctx.disk; } };',
   'var alert = function (m) { ctx.alerts.push(String(m)); };',
@@ -104,8 +108,10 @@ const EXPOSED = [
   'getSaved: function () { return ctx.saved; }',
   'fetchXingce', 'buildModuleOptions', 'fetchFavoriteXingce', 'listPath', 'listParams', 'hlRowHtml', 'noteIdsWithHl', 'pickKey',
   'hlHoldLost', 'migrateHlLost', 'washHlLost', 'buildExamPointIndex', 'rememberModulesFromPoints',
-  'SRC_NAME', 'SRC_KEYS', 'EXPORT_PREFIX', 'resumeKeyOld', 'readResume', 'clearResume',
-  'staleResumeKeys', 'strayStorageKeys', 'ensureExamPointIndex'
+  'SRC_NAME', 'SRC_KEYS', 'SRC_LIST_LABEL', 'SUBJ_XC', 'SUBJ_ZY', 'EXPORT_PREFIX', 'resumeKeyOld', 'readResume', 'clearResume',
+  'staleResumeKeys', 'strayStorageKeys', 'ensureExamPointIndex', 'SRC_LIST_LABEL',
+  'examTypeFrom', 'subjectFromUrl', 'routeExamType', 'sweepFacets', 'rememberSources', 'backfillSubject',
+  'subjectForExport'
 ];
 const EXPOSE = "return {" + EXPOSED.map(function (n) { return n.indexOf(':') >= 0 ? n : n + ': ' + n; }).join(', ') + '};';
 
@@ -152,7 +158,7 @@ function ids(list) { return list.map(function (q) { return String(q.id); }).sort
 function mkStore(o) {
   return Object.assign({
     notes: {}, mastered: {}, wrongCount: {}, exported: {}, exportAt: {}, highlights: {},
-    mockQs: {}, mocks: {}, resume: {}, history: [], practiced: {}, qModule: {}
+    mockQs: {}, mocks: {}, resume: {}, history: [], practiced: {}, qModule: {}, qSrc: {}
   }, o || {});
 }
 function q(id, extra) { return Object.assign({ id: id, content: '题干' + id, opt: [], correct_answer: ['A'] }, extra || {}); }
@@ -228,6 +234,21 @@ async function t45() {
     'T5 模考收录＋错题本：站点两题都在，模考按模块筛只剩 B 那道答对的');
   const mockOnlyFiltered = await m.fetchByFilter({ srcs: ['mock'], mock_modules: ['A'] });
   ok(mockOnlyFiltered.length === 1, 'T5 突变守卫：模考分支不能再走「永远全部题目」（那是无视筛选的缺陷态）');
+
+  function srcOf(list, id) {
+    var hit = list.filter(function (x) { return String(x.id) === String(id); })[0];
+    return hit && hit._src;
+  }
+  const t1 = build({ store: mkStore(), errors: [q(11), q(12)], favorites: [q(12), q(13)] });
+  const mergedList = await t1.fetchByFilter({ srcs: ['error', 'favorite'] });
+  eq(srcOf(mergedList, 11), 'error', 'T4 只在错题本出现过的题，来源打 error');
+  eq(srcOf(mergedList, 12), 'both', 'T4 两路都出现的题当场升 both，不留到下次再对');
+  eq(srcOf(mergedList, 13), 'favorite', 'T4 只在收藏夹出现过的题，来源打 favorite');
+  eq(ids(mergedList), ['11', '12', '13'], 'T4 升 both 不新增条目，去重仍是那份去重');
+  const singleList = await build({ store: mkStore(), errors: [q(11)] }).fetchByFilter({ srcs: ['error'] });
+  eq(srcOf(singleList, 11), 'error', 'T4 单路取题也要打来源，不能只有合并那条会标');
+  eq(srcOf(await m.fetchByFilter({ srcs: ['error'] }), 7), undefined,
+    'T4 并进来的模考题不带 _src：它是「模考收录」，不该被记成练习题的出处');
 }
 
 (function t6() {
@@ -356,12 +377,14 @@ async function t45() {
     mockQs: { '9': { id: 9, content: 'D', at: 100 } },
     practiced: { p1: { n: 3, at: 10 }, p2: { n: 1, at: 5 } },
     qModule: { q1: 'A', q2: 'B' },
+    qSrc: { s1: 'favorite', s2: 'both' },
     wrongCount: { w1: 7 }
   });
   const store = mkStore({
     mockQs: { '9': { id: 9, content: 'M', at: 50 } },
     practiced: { p1: { n: 1, at: 99 } },
     qModule: { q1: '本标签先记的' },
+    qSrc: { s1: 'error' },
     wrongCount: { w1: 2 }
   });
   const m = build({ store: store, disk: disk });
@@ -370,6 +393,8 @@ async function t45() {
   ok(store.practiced.p2, 'T11 别的标签新登记的重练保住了');
   eq(store.qModule.q1, '本标签先记的', 'T11 模块映射先到先得，不被覆盖');
   eq(store.qModule.q2, 'B', 'T11 本标签没有的模块映射补进来');
+  eq(store.qSrc.s1, 'both', 'T11 来源映射合不出同值就升 both（这题两个标签各自见过它在错题本与收藏夹）');
+  eq(store.qSrc.s2, 'both', 'T11 对方那张来源表里本标签没有的条目并进来了');
   eq(store.wrongCount.w1, 7, 'T11 答错次数仍取大值（旧规则没被改坏）');
   eq(store.mockQs['9'].content, 'D', 'T11 模考快照仍按 at 取新（旧规则没被改坏）');
   eq(build({ store: mkStore(), disk: '坏 JSON{' }).mergeConcurrent({ mockQs: {} }), { mockQs: {} },
@@ -518,7 +543,7 @@ async function t16() {
     ["'<div class=\"gth-hlp-item' + (h.lost", 1, '划线行的标记全文只有 hlRowHtml 一处'],
     ['hlRowHtml(h, i, \'\')', 1, '笔记面板那一个调用点仍是不挂 title 的'],
     ['hlRowHtml(h, i, \'点击改批注\')', 2, '页边批注栏与重练题目两处仍挂着 title'],
-    ['= noteIdsWithHl();', 2, '笔记 tab 与一键整理两处共用同一口径'],
+    ['= noteIdsWithHl();', 3, '笔记 tab、一键整理与重扫三处共用同一口径（重扫报的「还缺几题」不能另起一套算法）'],
     ['rerenderAsides();', 2, '恢复数据后与划线变动后两处共用'],
     ["$$('.gth-aside').forEach", 1, '批注栏重画的遍历只有一份'],
     ['if (it && !a.dataset.editing) renderAside(a, it);', 1, '正在编辑的那一题不重画，这条判据还在'],
@@ -585,7 +610,24 @@ async function t16() {
     ['staleResumeKeys(store.resume)', 1, '旧刷题进度也走同一份判据'],
     ['class="gth-q"', 2, '两颗按钮各挂一个小问号，说明文字在 title 里'],
     ['.gth-q{display:inline-flex', 1, '小问号有自己的样式，不是个裸字符'],
-    ['title="把错题本与收藏夹', 1, '重扫的说明挂在问号上，不在按钮文字里']
+    ['title="先取行测考点表', 1, '重扫的说明挂在问号上，不在按钮文字里'],
+    ['先取行测考点表，再按日期过一遍错题本与收藏夹、按科目过一遍公专题目', 1,
+      '问号里说清两趟各补什么：只写「补模块」就成了上一版那种白跑一趟的错觉'],
+    // 科目与来源这两条新数据通路：只测纯函数不够，得证明写入点与读出口真的改成调它了
+    ['q._src = src;', 2, '两条取题路都把来源打在题上（单源那条与两路合并那条各一处）'],
+    ["p._src !== src) p._src = 'both'", 1, '同一题在两路都出现过，合并当场升 both，不等下次'],
+    ["subject: subjectOf(", 3, '划线、批注栏保存、模考收录三处写入点都改走 subjectOf'],
+    ['subjectFromUrl(location.search, location.hash)', 1, 'routeExamType 经过那道「只认 0 与 1」的守卫，不拿分类 id 当科目'],
+    ['(store.qSrc && store.qSrc[id]) || ', 1, 'noteFacets 真读新表，缺表退回 site（旧库的降级路径）'],
+    ["nf.src === 'site' ? r.src !== 'mock'", 1, '「练习题」按集合匹配，不是与三档互斥的第四个值'],
+    ['(SRC_LIST_LABEL[q._src]', 1, '导出的「来源」列走这张表，不是写死「练习」'],
+    ['SUBJECT_NAME[subjectForExport(q)]', 1, '导出的「科目」列会退回库里那条，重扫回填的科目才在表格里看得见'],
+    ['sweepFacets(siteList, zyList, examPointModule)', 1, '重扫把两趟结果交给判定，不是拉回来就扔'],
+    ['rememberSources(f.srcs)', 1, '来源判定结果真的落库'],
+    ['backfillSubject(f.subjects)', 1, '科目判定结果真的回填'],
+    ['if (j.qSrc) store.qSrc = j.qSrc;', 1, '恢复备份吃这张新表'],
+    ['store.qSrc = {};', 2, '默认形状与清空各一处，漏一处就是「界面能用但库里没这桶」'],
+    ['error">练习题 · 错题本', 1, '来源下拉里多了按出处细分的档位']
   ];
   W.forEach(function (p) {
     eq(countOf(p[0]), p[1], 'T20 ' + p[2]);
@@ -883,7 +925,9 @@ async function t16() {
     ['return fetchByFilter(', 'T30 索引到手之后才按日期拉题'],
     ["dayRange: '4'", 'T30 重扫按「日期=全部」，不是当天那一档'],
     ["srcs: ['error', 'favorite']", 'T30 两路都扫：只扫错题本会漏掉收藏里的题'],
-    ['noteIdsWithHl().filter', 'T30 扫完要数出笔记与划线里仍缺模块的题，而不是报个「完成」了事'],
+    ['noteIdsWithHl()', 'T30 扫完要按「笔记 ∪ 划线」那份口径数还剩几题，而不是报个「完成」了事'],
+    ['!moduleOf(id)', 'T30 缺模块那一档真的在查模块，不是只数题'],
+    ['noteFacets(id).subj', 'T30 缺科目那一档也数得出（科目与模块两栏各报一个数）'],
     ['新登记 ', 'T30 状态栏要报「新登记 N 条」：N=0 就说明问题出在换不出模块名，不在题目不在列表里'],
     ['renderNotesList();', 'T30 重画笔记面板：模块下拉与那条提示都得跟着新登记变'],
     ["setStatus('重扫失败：'", 'T30 请求失败有话说，按钮不会卡在置灰态']
@@ -900,6 +944,118 @@ async function t16() {
     ['delete store.resume[x];', 'T30 确认后真删旧进度记录'],
     ['saveStore();', 'T30 删过 resume 就落盘，不然下一次写盘又把旧记录带回来']
   ].forEach(function (p) { ok(clean && clean.indexOf(p[0]) >= 0, 'T30 ' + p[1]); });
+})();
+
+(function t32() {
+  const m = build();
+
+  eq(m.examTypeFrom('?exam_type=0', ''), 0, 'T32 行测那一档的科目读得出来（站点自己就是按这个参数决定标签）');
+  eq(m.examTypeFrom('', '#/error?exam_type=1'), 1, 'T32 参数写在 hash 里也读得到');
+  eq(m.examTypeFrom('?exam_type=date', ''), null, 'T32 「日期」那一档不是数字：读不出科目就不读，不当成 0');
+  eq(m.examTypeFrom('', ''), null, 'T32 没有这个参数返回 null');
+
+  eq(m.subjectFromUrl('?exam_type=0', ''), m.SUBJ_XC, 'T32 0 判行测');
+  eq(m.subjectFromUrl('?exam_type=1', ''), m.SUBJ_ZY, 'T32 1 判公专');
+  eq(m.subjectFromUrl('?exam_type=1621', ''), null,
+    'T32 只认 0/1：站点别的控制器里 exam_type 会是分类 id（实测见过 1621、5），那些不是科目');
+  eq(m.subjectFromUrl('?exam_type=5', ''), null, 'T32 同上，5 也不当科目');
+  eq(m.subjectFromUrl('?exam_type=date', ''), null, 'T32 日期档不判科目');
+
+  (function () {
+    const err = build({ listRoute: true, location: { search: '?exam_type=0', hash: '#/error?exam_type=0' } });
+    eq(err.routeExamType(), 0, 'T32 错题页按路由判科目（站点自己也是按这个参数决定标签）');
+    const zk = build({ listRoute: true, location: { search: '', hash: '#/zhuanxiang?exam_type=1621' } });
+    eq(zk.routeExamType(), null, 'T32 那一页的 exam_type 是分类 id，不是科目：不拿来标');
+    const mk = build({ listRoute: false, location: { search: '', hash: '#/mocks/baogao/5158/detailv3?exam_type=1' } });
+    eq(mk.routeExamType(), null, 'T32 模考页不在列表路由内：那里的 exam_type 是接口参数');
+  })();
+
+  const index = { '111': '资料分析' };
+  const site = [
+    { id: 1, exam_point: 111, _src: 'error' },
+    { id: 2, exam_point: 999, _src: 'favorite' },
+    { id: 3, _src: 'error' },
+    { id: 4, exam_point: 111 }
+  ];
+  const zy = [{ id: 2, _src: 'favorite' }, { id: 5, exam_point: 111, _src: 'error' }];
+  const f = m.sweepFacets(site, zy, index);
+  eq(f.subjects['1'], 0, 'T32 考点落在行测树里的判行测');
+  eq(f.subjects['2'], 1, 'T32 撞树时以「按科目取到的公专结果」为准：科目就是那次请求的参数，不猜');
+  eq(f.subjects['5'], 1, 'T32 公专结果里的题即使考点像在行测树里也判公专');
+  eq(f.subjects['3'], undefined, 'T32 没有考点、又不在公专结果里：留未知，不硬给一个');
+  eq([f.srcs['1'], f.srcs['2'], f.srcs['4']], ['error', 'favorite', undefined],
+    'T32 来源只收题上真打了标记的；模考题没有 _src，不会被记成练习题');
+  eq(m.sweepFacets(site, [], null).subjects['1'], undefined,
+    'T32 没拿到考点表时一条都不判行测（这条与 T25 那道守卫是同一件事的两端）');
+  eq(m.sweepFacets(undefined, undefined, index).srcs, {}, 'T32 两趟都空时返回空表，不抛错');
+
+  (function () {
+    const st = mkStore({ qSrc: {} });
+    const t = build({ store: st });
+    eq(t.rememberSources({ 1: 'error', 2: 'favorite' }), 2, 'T32 两条新来源都登记');
+    eq([st.qSrc['1'], st.qSrc['2']], ['error', 'favorite'], 'T32 写进了库');
+    const saved = t.getSaved();
+    eq(t.rememberSources({ 1: 'error' }), 0, 'T32 同值重复登记不算改动');
+    eq(t.rememberSources({ 1: 'favorite' }), 1, 'T32 两处都出现过就升 both');
+    eq(st.qSrc['1'], 'both', 'T32 both 真的写进去了');
+    eq(t.rememberSources({ 1: 'error' }), 0, 'T32 已是 both 不再降回单一来源');
+    ok(t.getSaved() > saved, 'T32 有过改动才落盘');
+    eq(t.rememberSources(undefined), 0, 'T32 空输入不抛错');
+  })();
+
+  (function () {
+    const st = mkStore({
+      notes: { 1: { text: 'a', subject: null }, 2: { text: 'b', subject: 1 } },
+      highlights: { 1: [{ quote: 'q', subject: null }], 3: [{ quote: 'r', subject: null }] }
+    });
+    const t = build({ store: st });
+    eq(t.backfillSubject({ 1: 0, 2: 1, 3: 1 }), 3, 'T32 笔记补一条、划线补两条，已有值那条不算');
+    eq(st.notes['1'].subject, 0, 'T32 笔记的空科目补上了');
+    eq(st.notes['2'].subject, 1, 'T32 已有科目不被覆盖：重扫是补空，不是改写用户见过的那份');
+    eq(st.highlights['1'][0].subject, 0, 'T32 划线第一条也补（列表与一键整理读的就是这一条）');
+    eq(t.backfillSubject({ 1: 1 }), 0, 'T32 补过之后不再动');
+    eq(t.backfillSubject(undefined), 0, 'T32 空输入不抛错');
+    eq(t.backfillSubject({ 99: 0 }), 0, 'T32 既没笔记也没划线的题不写任何东西');
+  })();
+
+  (function () {
+    const st = mkStore({ notes: { 7: { text: 'x', subject: 0 } }, qSrc: { 7: 'error' } });
+    const t = build({ store: st });
+    const r = t.noteFacets(7);
+    eq(r.src, 'error', 'T32 记过来源的题，来源就是那一条');
+    ok(t.noteMatch(r, { src: 'site' }), 'T32 「练习题」是集合：错题本题要能被它选中');
+    ok(t.noteMatch(r, { src: 'error' }), 'T32 也能单按错题本筛');
+    ok(!t.noteMatch(r, { src: 'favorite' }), 'T32 没在收藏夹出现过的题不该被收藏夹那一档选中');
+  })();
+  (function () {
+    const st = mkStore({ notes: { 8: { text: 'y', subject: 0 } } });
+    delete st.qSrc;
+    var v;
+    try { v = build({ store: st }).noteFacets(8).src; } catch (e) { v = '抛错了：' + e.message; }
+    eq(v, 'site', 'T32 旧库没有这张表 → 退回「练习题」，不许抛错（抛错说明那道兜底被拆了）');
+  })();
+  (function () {
+    const t = build({ store: mkStore({ notes: { 9: { text: 'z', subject: 1 } }, mockQs: { 9: { id: 9, at: 1 } } }) });
+    const r = t.noteFacets(9);
+    eq(r.src, 'mock', 'T32 模考收录优先于练习题');
+    ok(!t.noteMatch(r, { src: 'site' }), 'T32 按练习题筛时不把模考题混进来');
+  })();
+
+  (function () {
+    const st = mkStore({
+      notes: { 20: { text: 'a', subject: 1 }, 21: { text: 'b' } },
+      highlights: { 21: [{ quote: 'q', subject: 0 }] }
+    });
+    const t = build({ store: st });
+    eq(t.subjectForExport({ id: 20, content_type: 0 }), 0,
+      'T32 题面自带 content_type 时以它为准，不拿库里那份顶掉（两处可以不一样）');
+    eq(t.subjectForExport({ id: 20 }), 1, 'T32 题面没有科目就取库里那条——重扫回填的正是这里');
+    eq(t.subjectForExport({ id: 21 }), 0, 'T32 库里只有划线时，从划线第一条取（与列表口径同一条）');
+    eq(t.subjectForExport({ id: 99 }), null, 'T32 两处都没有：返回 null，导出留空，不硬给一个科目');
+  })();
+
+  eq([m.SRC_LIST_LABEL.error, m.SRC_LIST_LABEL.favorite, m.SRC_LIST_LABEL.both],
+    ['错题本', '收藏夹', '错题本＋收藏夹'], 'T32 导出「来源」列的三个字面量齐了');
 })();
 
 async function t31() {
