@@ -75,7 +75,7 @@ const CASES = [
   ['题干·公式被 span 包字', 'stem', '<p><span>平均每个月的同比增量=</span><img><span>亿元，正确；</span></p>', 1221, 251, '2line', '编辑器爱包 span'],
 
   // —— 2026-10-11 用户报的那道等边三角形题（11 枚真图，尺寸是从站点抓下来读的）——
-  // 段首那句「如图所示，」不锚住尾巴，同段后面每一枚行内式子都会被判成图放过去——
+  // 段首那句「如图所示，」不锚住尾巴，紧跟它的那枚式子就因为「前面那串字里有领起词」被判成图——
   // 第一枚 293x62 因此原样摆在 14px 正文中间，那就是用户说的「还是有问题」。
   ['题干·段首引述后的行内式', 'stem', '<p>如图所示，边长为50米的等边三角形ABC是学校操场上的一块闲置区域，其中<img>，<img>。</p>', 293, 62, '1line', '「如图所示」在段首，管不到段中'],
   ['题干·单行式接句号', 'stem', '<p>学校决定将<img>设置为沙坑，将四边形BEFC设置为仓库。</p>', 213, 74, '1line', '△AEF 那枚'],
@@ -103,6 +103,8 @@ const CASES = [
   // —— 选项：整张就是一张分式图（用户第二张截图）——
   ['选项·整张分式', 'qopt', '<div class="gth-choice"><div class="gth-circle"></div><div class="gth-ctext">' +
     '<div class="gth-clab">A.</div><div class="gth-cval"><img></div></div></div>', 110, 150, '2line', '选项即分式'],
+  ['选项·整张分式 10/3', 'qopt', '<div class="gth-choice"><div class="gth-circle"></div><div class="gth-ctext">' +
+    '<div class="gth-clab">C.</div><div class="gth-cval"><img></div></div></div>', 95, 142, '2line', '10-11 那道题的选项 C，实测 95x142'],
   ['选项·横图', 'qopt', '<div class="gth-opt-plain">B. <p><img></p></div>', 650, 200, 'keep', '选项里的统计表原样'],
   ['选项·纯文字', 'qopt', '<div class="gth-opt-plain">C. 2015年</div>', 0, 0, 'keep', '无图'],
 
