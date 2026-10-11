@@ -1,229 +1,726 @@
 # AGENTS.md
 
-上岸村机考系统（`pub.xdtech.top/<ctx>/wxpage/tiku/gongan/`，AngularJS SPA）的油猴脚本仓库。
-交付平台是**脚本猫（ScriptCat）**，不是篡改猴；脚本以「整份文件粘进扩展」的方式发布，
+上岸村机考系统（`pub.xdtech.top/<ctx>/wxpage/tiku/gongan/`，AngularJS SPA）的油猴脚本仓库。  
+交付平台是**脚本猫（ScriptCat）**，不是篡改猴；脚本以「整份文件粘进扩展」的方式发布，  
 所以每个 `.user.js` 必须是自包含的单文件（不打包、不拆模块）。
 
-在用的脚本有两份：
+在用的脚本只有一份：`shangancun-exam-helper.user.js` —— **上岸村机考助手**，2026-10-08 由「错题助手」与  
+「考试计时暂停」合并而来（`docs/adr/0008`）。文件里是两半，靠两行段落边界注释切开，  
+**各自一个 IIFE、各自 `try/catch`、计时段排在前面**（判据守这个形状）：
 
-- `gongan-wrong-questions-helper.user.js` —— 错题助手，作用于 `index.html`（错题本 `#/error`、
-  收藏 `#/shoucang`）与 `mocks/index.html`（全真模考收录）。发布在商店页 8111。
-- `shangancun-exam-timer-pause.user.js` —— 考试计时暂停，只作用于 `zhuanxiang.html` / `practice.html`
-  的计时显示，不碰笔记与划线；它靠给 scope 的时间字段装 getter/setter 阀门来冻结时间。
+- **前半 · 计时暂停**（`// ===== 计时暂停：闸门与阀门 =====`）—— 只作用于 `zhuanxiang.html` / `practice.html`    
+  的计时显示，靠给 scope 的时间字段装 getter/setter 阀门冻结倒计时，不碰笔记与划线。    
+  逐题用时记录器也在这半（`docs/adr/0007`）：专项页每秒把 1 秒记在当前那一个记账单位上，    
+  写它自己的键 `gth_qtime_<ctx>`，助手那半只读。
+- **后半 · 机考助手**（`// ===== 机考助手：错题 · 笔记 · 题本 · 模考 =====`）—— 作用于 `index.html`    
+  （错题本 `#/error`、收藏 `#/shoucang`）、`mocks/index.html`（全真模考收录）与 `zhuanxiang.html` 的交卷后解析    
+  （那份界面能力的口径全在 `docs/adr/0005`；重练那一屏还原站点专项页形态的口径在 `docs/adr/0009`）。    
+  它只在自己这几条路上动手，`practice.html` 上一个节点都不建    
+  （`helperOwnPage()` 那道守门，ADR 0008 决策 7；夹具里有一页专门守着）。
+
+两半在同一份文件里但**不共享作用域**：`CTX` / `QTIME_KEY` 各现算一份（判据锁两处一字不差），  
+计时段不许引用助手那半的任何名字（判据扫得出）。交卷态前后它们读的是同一个 scope 上的 `isAlreadySubmit`,  
+改闸门逻辑时要把另一半当邻居而不是无关代码。  
+`@grant` 取助手那套（`GM_xmlhttpRequest` + `GM_addStyle`），所以**计时段现在也跑在脚本猫沙盒里**——  
+取页面真身靠 `pageNg()` 的 `unsafeWindow` 回退，诊断串里的「取页:」记的就是这次走的是哪条。
 
 曾经还有第三份「机考助手」（全站形态），已于 2026-10-03 删除，相关决策见 `docs/adr/0001`、`0002`。
 
-动手改某个模块前，先按名字读它的术语归属（`CONTEXT.md`）与相关决策（`docs/adr/`）；
-时序状态（谁在测什么、卡在哪、线上是哪份）**不进仓库文档**——要查就读脚本头 `@version`、抓商店页、
-读 `localStorage`，仓库里没有进度文件。`CONTEXT.md` 与本文件都不带版本状态标签。
+动手改某个模块前，先按名字读它的术语归属（`CONTEXT.md`）与相关决策（`docs/adr/`）；  
+时序状态（谁在测什么、卡在哪、线上是哪份）**不进仓库文档**——要查就读脚本头 `@version`、抓商店页、  
+读 `localStorage`，仓库里没有进度文件。`CONTEXT.md` 与本文件都不带版本状态标签。  
 还没修的存量缺陷单独列在 `docs/存量缺陷.md`，那是待办清单，不是决策。
 
-## 验证：改完必须跑的四条命令
 
-没有 package.json、没有 CI，验证就是这几条 node 命令，全部秒级、离线、不碰浏览器。
+## 验证：改完必须跑的命令
+
+没有 package.json、没有 CI，验证就是这几条 node 命令，全部秒级、离线、不碰浏览器。  
+**只有一份脚本**，所以每件工具都扫它一遍——`T33` 只读文件里的计时段、`T64` 只读助手那半，  
+两半各自在自己的切片里数（切法见下面「判据的写法」）。
 
 ```
-node --check gongan-wrong-questions-helper.user.js          # 语法
+node --check shangancun-exam-helper.user.js      # 语法
 node tools/gth_logic_test.js                     # 逻辑判据，绿=「N 条判据全过」
 node tools/gth_init_order.js                     # 启动顺序，绿=「判定：绿」
-node tools/gth_selfcheck.js gongan-wrong-questions-helper.user.js   # 待肉眼确认的清单
+node tools/gth_mutate.js                         # 突变表逐条判红，绿=「全部 N 条都判红，且红来自断言」
+node tools/gth_selfcheck.js shangancun-exam-helper.user.js   # 待肉眼确认的清单
+node tools/gth_fixture.js --serve                # 本机夹具（零站点请求），打印七条可打开的 URL
 ```
 
-前三条是过/不过；`gth_selfcheck.js` 没有通过线，它输出的是候选清单
-（「调用了却没声明」那几条历来是形参名的误报），要看的是**新多出来的**名字——
-尤其「只出现一次的函数」，那基本就是死代码。
+`gth_mutate.js` + `gth_mutations.json` 是「每修一个 bug 都要做一次突变」那条规矩的载体：  
+表里一条 `{name, file, from, to}`，工具写入→跑判据→**在 finally 里还原并比对哈希**。  
+它把红的分成三类，只有一类算合格：`ASSERT-RED`（断言判红）；  
+`GREEN` = 这条修复没有守卫、`SKIP` = 锚点与代码已漂移、`BUILD-RED` = 红来自沙箱构建失败而不是断言。  
+**别再用一次性脚本手做突变**——10-08 有一次中途抛错、没还原，后面所有判据都跑在被污染的文件上，  
+而报出来的"红"看着像真信号（现例：任何一处改动都让 T54/T65 一起红）。  
+新加判据要当场补一条对应突变，否则那条判据是没人验过的。
 
-判据的写法决定了它能不能当守卫，改脚本前先读懂：`gth_logic_test.js` **从脚本原文里抽取**函数体来跑，
+夹具那一件不是守卫，是**L1.5**：`tools/gth_fixture.js` 把源码内联进一份假页面、用 `127.0.0.1` 起服务，  
+URL 路径直接伪造成站点的真路径，所&#x4EE5;**「按文件名/按状态划界」这类逻辑在假页面里走的就是真分支**。  
+它证得了：注入不报错、逐题小条渲染出来、题本作为左菜单第二颗同级入口开得起、  
+成员口径（只有快照的孤儿不进题本、站点在列的不进题本）、缺题面与缺解析两套降级文案、  
+模考页列表态（scope 没有题干）也绑得上小条；2026-10-08 起还多认这几件——  
+**材料组卷面**的区间标签与「N 题 · M 段材料」计数（假 scope 里给每一项挂 `opts`）、  
+**答题态**只多一颗暂停键（计时键挂得上、助手那半不出节点）、  
+`practice.html` 的两个模式（练习模式**零痕迹**、考试模式只有计时键）、  
+以及**补充题本那一屏**：47 题分三页（第一页 20 张卡、末页 7 张）、翻页器点得动且翻完回到顶、  
+卡片整幅宽、解析默认收起点得开、笔记卡落在内框**右外**那一栏并与卡片顶对齐。  
+**同一天的第二轮把假站点接口也补上了**：`GM_xmlhttpRequest` 原来一律 `onerror`，  
+于是「组卷取题」「与站点核对」「补齐题面」三条路在假页面里根本走不到，重练那一整屏与  
+报告卡片里那块笔记区永远量不出来（这四条当时写在"证不到"里）。现在按 URL 分派假数据  
+（`commodity` / `error/view` / `favorite/view` / `subcategory` / `api/v2/tiku/*/analysis`），  
+于是**重练答题态与交卷态、自动核对、自动补齐、只看错题的集合收窄**全都能在这一层看到。  
+配套的开关：`?gth_book=1` 自己点开补充题本、`?gth_quiz=1` 开一轮三题重练、  
+`=2` 再顺手交卷（点的是错选项，所以有一道错题）、`=3` 走限时一分钟那条路（头部该出现暂停键）、  
+`?gth_img=1` 摊开题本第一页所有解析并**逐枚量图片的渲染高度**（同一枚大图按五种排版各放一次，  
+外加材料里一枚「形状像公式」的细长条；`#gth-imgsize` 每行自带 OK/BAD，末行是「判定：绿（N 枚各按期望）」——  
+尺寸这类只有真渲染才量得到，静态判据证不了，而把公式档那行 CSS 删掉它当场报红，两个方向都证过）、  
+`=2` 再多点一枚被压小的图，量「点开看原图」开不开、点空白收不收得回。  
+专项页那条 URL 另有 `&gth_qtime=1`：自己点开「本场做题用时」那张卡片、再点一下 body，往控制台与  
+`<pre id="gth-qtime">` 写一行 `GTH_QTIME 点开=开 点空白=已收回`（把收回那行 CSS/JS 删掉它当场报「没收回」）。  
+**这些开关要带 `#/error`**——左菜单那两颗入口只在 `routeKind()` 认出的列表路由上才建，  
+`index.html` 光秃秃一条路径上根本没有题本入口。  
+等元素出现用的是轮询（`__gthWait`）不是固定毫秒数：脚本同步内联，但两颗菜单项要等它跑完才有，  
+在固定时间上赌一次就会量到"点了没反应"。  
+它证不到：脚本猫的加载与 `@match`、真站点的 scope 字段名（夹具里的假 scope 是我们自己写的）、  
+交卷态闸门在真 URL 上的行为——这三条仍然只能等 L2。  
+专项页那条 URL 加 `&gth_open=1` 会让夹具自己点开笔记浮窗，方便看浮窗形态；  
+每条假页面在 2.2 秒后往控制台打一行  
+`GTH_TRACE …gth节点=N 计时键=N 用时带=N 助手视图=N 题本卡=N 重练=N 筛选框=N`，  
+那就是「零痕迹」这条的可读判词；`筛选框=` 现在守的是**题本顶部只有那三档**（两个下拉，  
+多出一个就是有人偷偷加了第四档）。  
+夹具的两处形状是照着真站点抄的，别当成随手写的：**`.gongan2-container` 是 `width:1000px;margin:0 auto`**  
+（实测站点 CSS 就是这个），因为只有内容列窄于视口，页边那一栏才有地方落——不然量到的永远是「挤不下就不摆」；  
+以及**种子里多 45 道模考题**（`mockQs` 1001–1045），不然补充题本只有两题，一页 20 题与翻页根本量不出来。  
+第三处同样是抄的、10-08 补的：**假错题卡片带 `.sequence-box`、`.choice .circle`、`.bottom-line`**——  
+不抄这三样，「题本对齐错题页」在夹具里只能看到题本那一半，并排比不了。  
+夹具产物写到系统临时目录，`tools/gth_fixture.js` 本身入库。  
+**看画面别只靠 `GTH_TRACE`**：布局类（宽度、颜色、格子排布）要真渲染。  
+Qoder 内置那个 in-app Browser 有时没有可见 surface（截图直接报 `viewport=0x0`，  
+而 `evaluate_script` 照常能跑——此时所有 `getBoundingClientRect` 都是 0，量出来的"挤不下"是假的）。  
+本机可用的替代是一条命令行：  
+`"…/msedge.exe" --headless=new --disable-gpu --hide-scrollbars --window-size=1400,1000 --virtual-time-budget=9000 --screenshot=<绝对路径> <夹具URL>`，  
+`--screenshot` 要给**可写的绝对路径**（相对路径会「拒绝访问」）。  
+交互类（点暂停、按 F5、勾只看错题）headless 里做不到，就用 `evaluate_script` 派发事件再读状态。
+
+除 `--check` 与 `gth_selfcheck.js` 外都是过/不过；`gth_selfcheck.js` 没有通过线，它输出的是候选清单  
+（「调用了却没声明」那几条历来是形参名的误报，报出来的 `fn` 就是 `eachTimerScope(fn)` 的形参），  
+要看的是**新多出来的**名字——尤其「只出现一次的函数」，那基本就是死代码。
+
+判据的写法决定了它能不能当守卫，改脚本前先读懂：`gth_logic_test.js` **从脚本原文里抽取**函数体来跑，  
 不复制实现。于是它有两条硬约束：
 
-1. 出现在它 `FNS` / `CONSTS` 名单里的名字，必须继续声明为两空格缩进的 `  function NAME(` /
-   `  var NAME = `，且能只靠文件里的 `PRELUDE` 桩跑通。改名、挪进嵌套作用层、换缩进、
-   给它新增一个没被桩过的全局依赖，都会让抽取当场抛错（是响亮失败，不会假绿）。
-   抽出来还要**第三份名单 `EXPOSED`** 把它暴露给测试才用得上；漏加不会假绿，`build()` 返回的
+1. 出现在它 `FNS` / `CONSTS` 名单里的名字，必须继续声明为两空格缩进的 `  function NAME(` /     
+   ` var NAME =`，且能只靠文件里的 `PRELUDE` 桩跑通。改名、挪进嵌套作用层、换缩进、     
+   给它新增一个没被桩过的全局依赖，都会让抽取当场抛错（是响亮失败，不会假绿）。     
+   抽出来还要**第三份名单 `EXPOSED`** 把它暴露给测试才用得上；漏加不会假绿，`build()` 返回的     
    Proxy 会在测试问到它时当场抛「EXPOSED 里没有 X」。
-2. 每修一个 bug，先想「把这行改回去，哪条判据会红」，答不出来就是还没修完。改完做一次**突变**：
-   把修复改回缺陷态，确认它真的判红。红要来自断言，不能来自沙箱构建失败。
-   去重/合并类改动尤其要补**接线判据**——只测抽出来的新函数、不测原来那几处真的改成调它了，
+2. 每修一个 bug，先想「把这行改回去，哪条判据会红」，答不出来就是还没修完。改完做一次**突变**：     
+   把修复改回缺陷态，确认它真的判红。红要来自断言，不能来自沙箱构建失败。     
+   去重/合并类改动尤其要补**接线判据**——只测抽出来的新函数、不测原来那几处真的改成调它了，     
    等于没守（`gth_logic_test.js` 的 T20 就是这个用途）。
+3. **两半靠段落边界注释切片**：`halves()` 把原文切成 `timer` / `helper` / `whole` 三份，     
+   `T33` 只在自己的那一片里数、`T64` 只在助手那一片里数。**把那条边界注释删掉或改字，判据当场抛错**     
+   ——它是判据的一部分，不是装饰。合并前 T33 是在两整份文件上数的，助手里的 `el.className = ''`、     
+   `classList.toggle` 这些形状会让它假红。
+4. **注释允许写，判据就得跑在剥过注释的文本上**：`hit` / `miss` / `countOf` 一律吃     
+   `blankLiterals.comments(...)`（只遮注释、保留字符串与正则）。用默认那一档会把 CSS 断言全打废     
+   ——它连字符串一起遮；而 `countOf("'elapsed_time'")` 这类 needle 要数的正是字符串本身。     
+   这条是 2026-10-08 允许写注释时一并改的取词口径：不改它，注释里写一句「不许写 elapsed_time」都会判红。
 
-`gth_init_order.js` 守的是一类无头判据看不见、真页面整段报废的缺陷：`var` 只提升声明不提升赋值，
-顶层同步代码读到还没赋值的名字会当场抛错，把 IIFE 后半段一起带走。踩过一次，症状是
-「操作条、批注栏都在，就是划不了线」——崩点之后的工具条节点、选区 mouseup 监听、一键整理、
-批注气球、重练面板全都没执行，看着像站点改版，其实是我们自己的启动顺序。
+`gth_init_order.js` 守的是一类无头判据看不见、真页面整段报废的缺陷：`var` 只提升声明不提升赋值，  
+顶层同步代码读到还没赋值的名字会当场抛错，把 IIFE 后半段一起带走。踩过一次，症状是  
+「操作条、批注栏都在，就是划不了线」——崩点之后的工具条节点、选区 mouseup 监听、一键整理、  
+批注气球、重练面板全都没执行，看着像站点改版，其实是我们自己的启动顺序。  
 写「读一遍磁盘库再初始化 store」之外的启动调用时，注意它在文件里的位置必须晚于它间接读到的每个 `var`。
 
-DOM 与站点请求不在判据里，只能在脚本猫里验（本仓库把这两档叫 **L1 只读探测 / L2 端到端**）。
-**浏览器环境默认只读**：探测、读 console、跑只读探针脚本由代理自己做；
+DOM 与站点请求不在判据里，只能在脚本猫里验（本仓库把这两档叫 **L1 只读探测 / L2 端到端**）。  
+**浏览器环境默认只读**：探测、读 console、跑只读探针脚本由代理自己做；  
 装脚本、改扩展库、写站点数据（收题、导出、改 localStorage）由用户手动做或先取得授权。
 
 四条从实测来的约束，动工具或跑端到端之前先读：
 
-- **站点模板文本 ≠ 运行时对象**。模板里 `{{ }}` 绑的字段名只是候选名之一，站点会把别的键加工进 scope。
-  现例（curl `https://pub.xdtech.top/<ctx>/wxpage/tiku/gongan/analysis/analysis.template.html` 可复算，
-  11893 字节）：作答在模板里绑的是下划线 `{{item.user_answer.join(',')}}`，而模考解析页运行时 scope 里
-  作答**只有驼峰 `userAnswers`**，模板那个名字在 scope 里根本不存在。`result` 的字样在这个模板里出现 6 次，
-  全落在 3 个表达式内——两处 `ng-show` 的可见性判断与一处 `ng-class` 的着色
-  `{'undone':item.result== 2,'wrong':item.result == 0}`，判的值只有 `0` 与 `2`，**只证明** `0`=错、`2`=未做；
-  `1`=答对要靠真实场次数出来，`correct_answer` 更是列表态压根没有、要逐题额外请求才补得上。
+- **站点模板文本 ≠ 运行时对象**。模板里 `{{ }}` 绑的字段名只是候选名之一，站点会把别的键加工进 scope。    
+  现例（curl `https://pub.xdtech.top/<ctx>/wxpage/tiku/gongan/analysis/analysis.template.html` 可复算，    
+  11893 字节）：作答在模板里绑的是下划线 `{{item.user_answer.join(',')}}`，而模考解析页运行时 scope 里    
+  作答**只有驼峰 `userAnswers`**，模板那个名字在 scope 里根本不存在。`result` 的字样在这个模板里出现 6 次，    
+  全落在 3 个表达式内——两处 `ng-show` 的可见性判断与一处 `ng-class` 的着色    
+  `{'undone':item.result== 2,'wrong':item.result == 0}`，判的值只有 `0` 与 `2`，**只证明** `0`=错、`2`=未做；    
+  `1`=答对要靠真实场次数出来，`correct_answer` 更是列表态压根没有、要逐题额外请求才补得上。    
   所以只读模板得到的字段清单当线索，不当证据。
-- **扫脚本的尺子有两种假绿**：把最外层 IIFE 的体也遮掉 → 报「同步入口 0 处 / 判定：绿」；
-  没把 `function NAME(` 的定义头排掉 → 报「入口 270 处 / 假雷 22 条」。新写一把尺子，
-  先问它在这两种切法下各报什么，而不是先问它报得准不准。
-  同一把尺子还必须认出**正则字面量**：`replace(/"/g, '')` 里的引号若不当字符串吃掉，后面全部内容会被
-  误吞进字符串；`/^[\[{]/` 里的括号若不当正则吃掉，花括号配对就多算一只。这套扫描规则只有
+- **扫脚本的尺子有两种假绿**：把最外层 IIFE 的体也遮掉 → 报「同步入口 0 处 / 判定：绿」；    
+  没把 `function NAME(` 的定义头排掉 → 报「入口 270 处 / 假雷 22 条」。新写一把尺子，    
+  先问它在这两种切法下各报什么，而不是先问它报得准不准。    
+  同一把尺子还必须认出**正则字面量**：`replace(/"/g, '')` 里的引号若不当字符串吃掉，后面全部内容会被    
+  误吞进字符串；`/^[\[{]/` 里的括号若不当正则吃掉，花括号配对就多算一只。这套扫描规则只有    
   `tools/blank_literals.js` 一份出处，三件工具都走它。
-- **L2 可以绕开扩展跑**：把本机源码经 `127.0.0.1` serve 出去，在用户已登录的页面里 `eval`，
-  只补两个垫片——`GM_addStyle` 插 `<style>`、`GM_xmlhttpRequest` 走 `fetch`，源码一字不改。
-  这一环证不了 ScriptCat 自身的加载与 `@match`，那一环只能等用户真贴一次。
-  `edge://extensions` 对自动化导航直接返回 Blocked URL，页面里也枚举不到扩展 ID，
+- **L2 可以绕开扩展跑**：把本机源码经 `127.0.0.1` serve 出去，在用户已登录的页面里 `eval`，    
+  只补两个垫片——`GM_addStyle` 插 `<style>`、`GM_xmlhttpRequest` 走 `fetch`，源码一字不改。    
+  这一环证不了 ScriptCat 自身的加载与 `@match`，那一环只能等用户真贴一次。    
+  `edge://extensions` 对自动化导航直接返回 Blocked URL，页面里也枚举不到扩展 ID，    
   所以「替用户装脚本」这条路结构上不存在，别去试第二次。
-- **站点结构可复现，探查产物不入库**：路由模板是公开静态资源、**不需要登录态**，就挂在本文件开头
-  那个 base（`…/wxpage/tiku/gongan/`）下面：`index/<page>.template.html`（`error` / `shoucang` 等）与
-  `analysis/analysis.template.html`，直接 curl 就得到（现例：`error.template.html` 7020 字节、
-  `analysis.template.html` 11893 字节，都是 200）。抓下来的 HTML、min.js、商店版原文都当一次性产物，
-  结论写进下面的「代码里不留注释」清单或对应 ADR——代码里不再留注释。
+- **站点结构可复现，探查产物不入库**：路由模板是公开静态资源、**不需要登录态**，就挂在本文件开头    
+  那个 base（`…/wxpage/tiku/gongan/`）下面：`index/<page>.template.html`（`error` / `shoucang` 等）与    
+  `analysis/analysis.template.html`，直接 curl 就得到（现例：`error.template.html` 7020 字节、    
+  `analysis.template.html` 11893 字节，都是 200）。抓下来的 HTML、min.js、商店版原文都当一次性产物，    
+  结论写进下面的约束清单或对应 ADR。
 
 ## 代码风格
 
 按现有文件的写法走：`var` + `function`，全文零箭头函数、零 `.find`/`.map` 之外的新式语法依赖。
 
-**代码里不留解释性注释**（脚本与 `tools/` 都是）。唯一保留的注释是 `// ==UserScript==` 到
-`// ==/UserScript==` 那一段——那是脚本清单，不是说明。语义靠函数名与变量名承载；
-隐藏的约束、实测来的字段形状、某个 workaround 对付的具体 bug，一律写进下面的「代码里不留注释」清单，
-或对应主题的 ADR / `CONTEXT.md`。同一份说明只留一个权威出处，别在多个文件里各写一遍。
+**注释按「读这行的人需要知道什么」写**（脚本与 `tools/` 都是，2026-10-08 起允许）。  
+函数头一行说明它为什么存在；行内只写读代码看不出来的局部理由——这个字段的真实形状、  
+这个 if 在防哪个坑、这个 workaround 对付谁。**不写复述代码的句子**，也不写「见 AGENTS.md 某节」这种指路  
+（章节一改名就腐烂）。跨模块的约束、实测来的站点字段、时序与重绘那几类，仍然只写在下面的约束清单与对应 ADR 里  
+——同一份说明只留一个权威出处，注释与文档不许各写一遍。  
+`// ==UserScript==` 那一段仍是脚本清单不是说明；两行段落边界注释是判据切片用的，见「判据的写法」第 3 条。
 
-**注入用的类名一律带 `gth-` 前缀，一个不留。** 宿主页面加载了 bootstrap 3.3.7、normalize、
-font-awesome 4.7 三套全局样式，它们占着 `.caret` `.label` `.table` `.text` `.close` 这类短名字。
-撞上一个，人家的规则就往你的节点上画东西，而你在自己的样式里**只看得见自己那部分**——
-现例：`class="caret"` 被 bootstrap 的 `.caret{border-top:4px solid;…}` 画了个实心三角形，
-和自家的 Lucide 箭头叠成「两个图标重叠」，为此白改了两轮尺寸才想到查类名。
+**注入用的类名一律带 `gth-` 前缀，一个不留。** 宿主页面加载了 bootstrap 3.3.7、normalize、  
+font-awesome 4.7 三套全局样式，它们占着 `.caret` `.label` `.table` `.text` `.close` 这类短名字。  
+撞上一个，人家的规则就往你的节点上画东西，而你在自己的样式里**只看得见自己那部分**——  
+现例：`class="caret"` 被 bootstrap 的 `.caret{border-top:4px solid;…}` 画了个实心三角形，  
+和自家的 Lucide 箭头叠成「两个图标重叠」，为此白改了两轮尺寸才想到查类名。  
 判据守住了 `.caret` 这一个，其余靠这条规矩。
 
-界面上一共四处「卡片左侧一条粗描边」，都是**有意保留**，设计检查工具每轮都会报它、不用改：
-页边批注栏与批注气球是琥珀色 3px，承的是 Word 批注「这条内容属于那段文字」的模型，颜色跟着划线色走；
-笔记快照与重练结果项是 2–3px，其中重练那条还按答对 / 答错 / 未做换色，那是状态编码不是装饰。
+界面上一共三处「卡片左侧一条粗描边」，都是**有意保留**，设计检查工具每轮都会报它、不用改：  
+页边批注栏、批注气球与解析页的笔记浮窗是琥珀色 3px，承的是 Word 批注「这条内容属于那段文字」的模型，  
+颜色跟着划线色走；笔记卡片上那行题干引文是 2px。  
+~~重练结果项那条（2–3px，还按答对 / 答错 / 未做换色）~~ 随 2026-10-08 的重练改版一起撤了——  
+那一屏现在照站点解析页，对错由答题卡那一格的颜色说（见 `docs/adr/0009` 决策 2）。
 
-## 代码里不留注释：约束只在这里
+## 约束清单：读代码看不出来的东西
 
-这些是实测来的、读代码看不出来的东西。**改哪一块，先在这里找它**；文档里没写的就是没证过，
-别照着代码的写法反推原因。新约束往这里加，不要写回代码。
+这些是实测来的、读代码看不出来的东西。**改哪一块，先在这里找它**；文档里没写的就是没证过，  
+别照着代码的写法反推原因。新约束往这里加。
+
 
 ### 站点的字段与接口（真页面与 curl 实测，不是从模板里读出来的）
 
-- 两个列表接口不对称：`error/view` 分页必须带 `page`；`favorite/view` 一次返回全部、不吃分页参数。
+- 两个列表接口不对称：`error/view` 分页必须带 `page`；`favorite/view` 一次返回全部、不吃分页参数。    
   `view_type` 0=按日期、1=按科目；`content_type=0` 时不传 `subcategory_id`/`exampoint_id` 就取不到题。
-- 列表项里没有可用的科目字段（实测 38 键只有 `exam_type_id`、`type_id`，不是站点那套 0/1）；
+- 列表项里没有可用的科目字段（实测 38 键只有 `exam_type_id`、`type_id`，不是站点那套 0/1）；    
   按日期那一趟是行测与公专混着返回的。
 - `type` 是题型（`type_name`=单选题）不是科目，兜底取它会把整批题写成行测；取不到就留 null。
-- 模块名优先取列表态就带的 `examPointName`（零额外请求）；题面接口的 `exam_point`/`check_point` 兜底；
+- 模块名优先取列表态就带的 `examPointName`（零额外请求）；题面接口的 `exam_point`/`check_point` 兜底；    
   `root_name` 是卷名，不参与。
-- 「模块」= 行测考点树 `exampoint_list` 的顶层节点；`exam_point` 是树里某个节点的 id，走一遍树记
+- 「模块」= 行测考点树 `exampoint_list` 的顶层节点；`exam_point` 是树里某个节点的 id，走一遍树记    
   「后代 → 所属顶层」即可（实测树 219 个节点、顶层 8 个模块名）。同名模块挂在多个分类下时按名合并成一组请求。
 - 行测考点在 `subcategory_list` 的下一级，站点模板只渲染这一级（更上的「试卷分类」在模板里已被注释掉）。
-- **只有 `fetchSubcategory()` 会填 `examPointModule`**（行测两条路和 `loadModules` 都走它）；按日期的
-  `pagedFetch` 与收藏的 flat 那条**不会填**。任何靠 `exam_point` 换模块名的动作必须先 `ensureExamPointIndex()`，
-  否则 `rememberModulesFromPoints` 第一行就 return 0——几百题拉回来一条都登记不上，界面只看着像「扫过了」。
+- **只有 `fetchSubcategory()` 会填 `examPointModule`**（行测两条路和 `loadModules` 都走它）；按日期的    
+  `pagedFetch` 与收藏的 flat 那条**不会填**。任何靠 `exam_point` 换模块名的动作必须先 `ensureExamPointIndex()`，    
+  否则 `rememberModulesFromPoints` 第一行就 return 0——几百题拉回来一条都登记不上，界面只看着像「扫过了」。    
   「重扫模块」这颗按钮当初就是这么白跑一趟，而状态栏把原因错写成「题目已不在列表里」。
-- **科目有两条可靠来源，都不在列表返回体里**：URL 的 `?exam_type=`（`0`=行测、`1`=公专，站点自己按它决定
-  标签；实测同一个参数在别的控制器里是**分类 id**——见过 `1621`、`5`——所以判科目前必须先认它是不是 0/1），
+- **科目有两条可靠来源，都不在列表返回体里**：URL 的 `?exam_type=`（`0`=行测、`1`=公专，站点自己按它决定    
+  标签；实测同一个参数在别的控制器里是**分类 id**——见过 `1621`、`5`——所以判科目前必须先认它是不是 0/1），    
   以及「按科目取题」的 `content_type` 请求参数（返回的每一题，科目就是那个参数本身，不用猜）。
-- 模考页**不许**用 URL 的 `exam_type` 判科目：那里它是打解析接口用的参数（`tiku/{examType}/{id}/analysis`）。
+- 模考页**不许**用 URL 的 `exam_type` 判科目：那里它是打解析接口用的参数（`tiku/{examType}/{id}/analysis`）。    
   `routeExamType()` 因此在非列表路由一律返回 null。
-- 回填用户库里的字段**只补空值**：`backfillSubject` 遇到 `note.subject != null` 就不动——后台扫描不该把
-  用户已经见过的值改掉。界面「练习题」那一档是**集合**（错题本 / 收藏夹 / 两者都算），不是与三档互斥的
+- 回填用户库里的字段**只补空值**：`backfillSubject` 遇到 `note.subject != null` 就不动——后台扫描不该把    
+  用户已经见过的值改掉。界面「练习题」那一档是**集合**（错题本 / 收藏夹 / 两者都算），不是与三档互斥的    
   第四个值；`store.qSrc` 缺失（旧库）时退回它，不报错。
-- 公专的考点 id 会不会落进行测树，本机 0 道公专错题测不出；真撞上只多挂一个站点考点名。**科目不再靠这条**：
-  重扫多跑一趟「按科目取公专题」，撞树时以那趟结果为准（`sweepFacets` 先认 zy 命中再认树成员），
+- 公专的考点 id 会不会落进行测树，本机 0 道公专错题测不出；真撞上只多挂一个站点考点名。**科目不再靠这条**：    
+  重扫多跑一趟「按科目取公专题」，撞树时以那趟结果为准（`sweepFacets` 先认 zy 命中再认树成员），    
   所以撞树的后果从「科目标错」缩回「多挂一个模块名」。没跑那一趟时仍然只标模块、不标科目。
-- 模考解析页：列表态 scope 只有 11 个键（含 `result`/`examPointId`/`userAnswers`/`examPointName`/
+- 模考解析页：列表态 scope 只有 11 个键（含 `result`/`examPointId`/`userAnswers`/`examPointName`/    
   `root_name`/`$$hashKey`），题面与 `correct_answer` 要逐题打 `api/v2/tiku/{examType}/{id}/analysis` 才补得上（补完 52 键）。
-- 答对题的 `correct_answer` 也是填好的（实测 `result=1` 的题与 `userAnswers` 同为 `["A"]`），不能拿它区分做没做；
+- 答对题的 `correct_answer` 也是填好的（实测 `result=1` 的题与 `userAnswers` 同为 `["A"]`），不能拿它区分做没做；    
   `result` 三态实测 0=答错、1=答对、2=未做（一场 180 题分布 48 / 99 / 33）。
-- 站点收起解析时把 `item.analysis` 换成空串、正文转入 `analysis_shadow`：收起态下解析区的划线根本不在 DOM 上，
+- 站点收起解析时把 `item.analysis` 换成空串、正文转入 `analysis_shadow`：收起态下解析区的划线根本不在 DOM 上，    
   而 `.analysis` 里还剩「解析」两个字——要看里面的 `<p>` 才知道正文在不在。
-- mocks 页实测没有 `.question-box` / `.question-outer` / `.inner-content`（计数 0），只能挂 `jiexieSubjects`
+- **站点那个「只看错题」把未做与答错并列**（2026-10-08 curl `zhuanxiang/dati.template.html` 复算，    
+  29156 字节）：题目节点上的 `ng-show` 是    
+  `view_only_wrong_subject && (item.result === 0 || item.result === 2)`，    
+  而 `result` 实测三态是 0=答错、1=答对、2=未做。本脚本重练那一屏的「只看错题」**不采纳这个算法**    
+  （未做不算答错，口径在收录、分层、判分三处都成立）——要改就得三处一起想，别在复盘这一屏破例。
+- **mocks 报告页第一屏不是题目列表**（真页面实测）：`mocks/index.html#/mocks/baogao/:id/detailv3` 打开是    
+  报告页（得分、五类排名、得分分布图），题目列表在底部「错题解析 / 全部解析」两个入口之后才渲染，    
+  所以「这一页没有小条」有两种可能：列表还没进 DOM，或题目项被判定挡掉——靠那条绑定数诊断日志分辨，别猜。
+- **模考解析页列表态的 scope 没有题干**（题面要逐题打接口才补得上，AGENTS 上面那条记过键数）。    
+  所以解析页绑定**按页面分严格度**：专项页要求「认得出整道题」（那里有答题卡那种没题面的桩，    
+  上一版宽匹配把小条插进每一格就是事故）；模考页的 ng-repeat 表达式本身唯一，    
+  **只要有数字 id 就绑**，否则整页一颗小条都挂不上。缺题面时「未收录」照常显示，    
+  复制与笔记引文回落到 `snaps → mockQs` 里那份。
+- mocks 页实测没有 `.question-box` / `.question-outer` / `.inner-content`（计数 0），只能挂 `jiexieSubjects`    
   节点本身；「模考收录」浮标在一页的生命周期里只建一次。
+- **mocks SPA 里没有左侧菜单，助手视图在那一页无处可挂**：实测 `mocks/index.html` 外壳与    
+  `mocks.min.e084c274.js`（106428 字节）里 `left-menu` / `gongan2-container` / `right-content` 计数全为 **0**，    
+  只有一个 `ng-view`。所以那个右下角浮标不是审美选择而是唯一能挂的地方；模考报告页上的新入口    
+  按 ADR 0005 决策 13 只做逐题小条，不重建视图。
+- **`zhuanxiang.html` 同时是答题页与解析页**，交卷前后是同一个文件、同一个模板：交卷按钮与倒计时挂    
+  `ng-if="!isAlreadySubmit"`，解析块 `.analysis` 挂 `ng-if="isAlreadySubmit && isViewAnalysis"`    
+  （`zhuanxiang/dati.template.html` 29156 字节可 curl 复算）。所&#x4EE5;**「不匹配做题页」这类按文件名划界的规矩    
+  在这一页做不到**，闸门只能按状态；驱动它的是 URL 上的 `status=finished` + `submit_id`    
+  （站点 bundle 里 `status=="finished"` → 取消计时 interval、置 `isAlreadySubmit`、调 `showAnalysis()`）。
+- 专项解析页那一屏**只摊一道题**：题目节点是 `ng-repeat="subjectObj in localStorage.currentPartData.subjectList"`    
+  配 `ng-if="localStorage.currentIndex == subjectObj.index"`。**同一页上还有五条 ng-repeat**（真页面实测，    
+  curl 模板可复算）：`item in item.subjectList`（左侧答题卡，每格一个）、`item in localStorage.partData`（分区）、    
+  `all in subjectObj.opts` 与 `o in subjectObj.opt`（选项）、`o in all.opt`。    
+  所以**按 `ng-repeat*="subjectList"` 这种宽匹配认题目必出事**——1.10.4 第一版就这么把逐题小条插进了    
+  答题卡每一格（左栏炸版），并且把 `data-gth-qid` 让给答题卡：`qRoot()` 先命中格子，划线去「选中1或解」    
+  那种文本里定位 → 定位失败、`miss` 累计成 `lost`。现在只认 `analysisNodeVar()` 里那两条精确表达式。
+- **同一元素上 ng-if 与 ng-repeat 并存时，DOM 节点的 scope 是 ng-if 开的子 scope**，题目变量在原型链上、    
+  不是自有属性——所以绑题目**不能用 `hasOwnProperty` 判**（一条都绑不上），只能顺着 `sc[name]` 读，    
+  再用 `looksLikeQuestion()` 把答题卡那种没题面的桩挡掉。
+- 上面那类误判写进库的 `lost` 是**可自愈的**：`paintRoot` 定位成功时会清掉 `miss`/`lost`，    
+  而答题卡格子文本长度 < 8 字时直接 return 不计失败。修好绑定后回错题页摊一次即可，不必迁移。
+- **专项页的答题卡左上角，右侧整片空着**（2026-10-06 真页面截图：`只看错题` + 1–20 格子 + 分区名在左侧栏，    
+  题目文字最长远到屏宽 2/3）：ADR 0003 里「右侧常驻 `.right-sheet` 占掉页边距」那条**只对 `analysis.html` 成立**，    
+  专项页的答题卡容器是 `.sheet-box` 且画在左边。别拿那条理由去论证「专项页右侧放不下东西」。
+- 带 `status=finished` 进专项页时**解析是默认展开的**（站点那支会调 `showAnalysis()`），    
+  所以「解析块不在 DOM 上」只在用户自己点过「查看解析」切换之后才发生；每题头部那一行是    
+  「题号 （题型）……`收藏本题` `纠错`」，站点自己的收藏与纠错都在这一行上。
+- 专项解析页每题 scope 上 `content / material / opt(o.label,o.content) / analysis / correct_answer /
+  user_answer / id / is_favorite` **全都在**（模板绑定为证）：抓一份完整题面快照**零额外请求**，    
+  别往题面接口去打请求。同页也有站点自己的收藏（`is_favorite`），所以「网站不会收进来」这句只对错题本成立。
+- **`practice.html` / `dati.html` 上没有「解析界面」这回事**：实测 `practice/dati.template.html`    
+  71038 字节里 `analysis` 出现 **0 次**，`dati.html` 的接口无解析、无正确答案。想给它们加什么之前先确认    
+  你要加的东西在那页拿得到。
+- **三类解析界面的题目节点表达式各不相同**（curl 模板可复算）：专项页    
+  `subjectObj in localStorage.currentPartData.subjectList`（`zhuanxiang/dati.template.html`）、    
+  模考报告页 `item in jiexieSubjects`（模板真名是 `mocks-baogao-detail-v3.template.html`，少一个连字符就 404）、    
+  `analysis.html` 是 `item in section.subjectList`（外一层 `section in answer_paper_section`，整分区摊题）。    
+  **解析页笔记入口只接第一条**（ADR 0005 决策 1，10-07 撤回另两页），后两条现在应当被    
+  `analysisNodeVar` 拒掉——判据 T60/T62 守着这条白名单，别再往里加表达式。
+- **模考报告页是 swiper 一屏一题**：`class="question swiper-slide"` 配    
+  `ng-if="$index - currentSubjectIndex <=3 && $index - currentSubjectIndex >= -3"`，    
+  列表虽全在 scope 上，DOM 里同时只有约 7 个题目节点；这也是它没接笔记入口的原因之一。
+- **资料分析这类卷面在站点里是按「材料」分组的**（bundle 复算）：站点初始化题目表时判 `is_group`，    
+  是则按 `material_id` 把整份 `subject_list` 重排成材料连续块，并给**每一项**挂 `opts`    
+  （同材料的小题清单，带各自 1..N 的题号）。于是答题态**一屏摊的是整个材料**，导航只在材料首题号之间跳    
+  （`nextSubjectPart`/`scrollToIndex` 全走 `goSpecIndex(item.opts[0].index)`）。所以    
+  「专项页一屏一道题」这条**只对非材料组卷面成立**——材料组下坑有两个：    
+  认题按 `currentIndex` 只会命中材料首题（那一屏的秒数全记到它头上），展示若照搬单题号就写成「第 11 题」    
+  而用户当时正看着 12（这是 10-07 那次「序号乱、收录不齐」的根因）。口径见 `docs/adr/0007` 决策 8：    
+  **按材料记账、展示写区间、不拆分不均摊**。
+- **`dati.html` 的倒计时是墙钟驱动的，计时暂停那份不覆盖它**：`dati.min.js` 每 tick 用    
+  `localTime=Math.floor(zeroDate.getCurrentTime()/1e3)+offsetTime;var countdown=end_time-localTime-0;`    
+  重算并覆盖 `$parent.allTime`，`countdown<=0` 就直接交卷；冻住 `localStorage.totalTime` 反而让    
+  `totalTime>countdown` **恒成立**，越冻越显。要压住它得改 `core.min.js` 里的 `zeroDate`（全站共用），    
+  性质就从"离开一会儿"变成"改考试时钟"。`zhuanxiang` / `practice` 两包实测 `serverTime`/`end_time`/`zeroDate`    
+  命中 **0**，没有这条路。
+- **zhuanxiang 页到点交卷只有一条**：`if(0==$scope.localStorage.totalTime)return $interval.cancel(...),void($scope.noCounter||$scope.submitAction());`    
+  —— 冻住 `totalTime` 它就永不成立。`practice.html` 的自动交卷只在**考试模式**（`page_type=random`）那一支，    
+  **练习模式**是 `totalTime>0?totalTime--:totalTime=0`，夹到 0 什么都不做，而且那一页头部显示的根本不是剩余时间    
+  而是「用时：x/总时长」（practice 壳上的 `.remain-time` **没有** `ng-if`，两个 `<a>` 靠 `page_type` 二选一）——    
+  所以练习模式被划成**不生效**：脚本在注入 style 之前就 `return`，页面上一个痕迹都不留。这不是审美——    
+  `freezeDom` 按**文本形状**认时间节点，在那一页按下暂停会把「用时」钉成假数字，正好毁掉下面那条"已用时间永远真"。
+- **「可暂停」的定义**：这一页存在**会被倒计时触发的后果**——到点交卷，或下面那条的到点随机跳板块。    
+  没有后果就没有"暂停"这回事。判据按 URL 划界（`zhuanxiang.html` 有宿主即生效；`practice.html` 要 `page_type=random`）。
+- **`page_type` 是 URL 参数**（`$scope.page_type=publicjs.getSearch().page_type`，practice 包内命中 11 次），    
+  而站点那个 `getSearch()` **同时读 `location.search` 与 `location.hash` 里 `?` 后面那串，且 hash 覆盖 search**。    
+  划界必须同口径两处都读——只读 `search` 会把 `practice.html#/?page_type=random` 那种链接判成"不生效"。
+- **`totalTime--` 与 `elapsed_time++` 在同一个 `$interval` 里**：同一段还带着 `currentPartData.elapsed_time++` 与    
+  `detail_elapsed_time[...]`。除了上面那条已经记过的 `serverTime`/`end_time`/`zeroDate` 为 0，`Date.now`/`new Date`/    
+  `getTime(`/`getCurrentTime` 在这两包里也是 **0 命中**——页面里没有任何"时刻"来源，一切时间感都是每秒一次 `++`/`--`。    
+  于是冻住 `totalTime` 之后那个 interval **永远不 cancel**，站点那一列 `++` 会一直数下去：这正是"真实用时白送"的原理。
+- **已用时间不许冻**（2026-10-06 定）：交卷上报的就是 `elapsed_time:$scope.localStorage.elapsed_time`，    
+  给它装阀门等于**往站点交一份少了一截的用时**。所以阀门清单里只有 `totalTime` 与每块的 `remainTime`。    
+  「净做题用时」这个概念在本脚本里不存在——要它就得改站点的数据。真实用时反过来是白送的：    
+  键的 `title` 直接读 `localStorage.elapsed_time`，那是站点每秒在数的值，脚本自己不设第二只表。
+- **practice 考试模式还有第二条后果**：某块 `remainTime` 到 0 → 该块置 `finished` → 弹「温馨提示：系统将随机进入    
+  某个未作答部分」且 `interval:!0` **会自动关掉** → `randomSubjectPart(!0)` 把人扔进随机未作答板块；    
+  另有 `remainTime<=300` 的 5 分钟提醒（`isTimeoutAlerted` 只在 practice 包）。zhuanxiang 没有这条路：    
+  它的 `remainTime` 只有初始化、tick 自减与手动「下一板块最少作答 X 分钟」闸门三处，`partInterval` 只被赋过 null，    
+  模板里 `{{partTime}}` 那行是注释掉的。**「人不在时被随机跳到别的板块」只发生在 practice 考试模式**，    
+  而冻住 `partData[].remainTime` 正好掐住它——这是那颗键的第二条保护，不是副作用。
+- **站点自己会把剩余秒数写进它的续答缓存**：`zhuanxiang_cache_key="zhuanxiang_cache"+exam_id`，每 tick 的    
+  `$scope.cacheAnswer()` 里 `answerObj.exam_time=$scope.localStorage.totalTime`；进页面时反过来    
+  `totalTime=cachedData.exam_time||...`。**含义**：阀门真装上后，站点自己就把冻结值写进它的缓存，    
+  暂停中关标签、刷新都不丢，本脚本不必写站点任何数据（判据禁掉了对时间字段的任何一次写）。
+- **「停不住」与「还没就绪」是两件事**：按下时全表扫过一台计时器 scope 都没有（`scopeCount===0`）只是站点还没跑起来——    
+  键留在原地、不冻、不持久化、不判死刑（否则考试开始前的页面会被永久锁死）；**扫到了却装不上阀门**才是停不住，    
+  此时摘掉那颗键，在站点那行时间上留一道 `gth-timer-no` 虚线下划、把原因写进宿主的 `title`，之后每秒复检不再建键。    
+  界面上**没有「不可暂停」那颗灰键这一档**（2026-10-06 用户口径：界面不可暂停就不要在那个界面生效，    
+  能暂停的界面行为必须统一）；`@match` 不动，划界只能在运行时做，因为两种 `page_type` 共用同一份 `practice.html`。
+- **`noCounter` 与交卷态会把 `.remain-time` 整块 `ng-if` 撤走**（`ng-if="!noCounter && !isAlreadySubmit"`；    
+  `noCounter` 只在 zhuanxiang 包出现，practice 是 0，所以那一页本来就没这颗键）：    
+  `noCounter` 的语义就是这一项没有总时长（`label_info.total_seconds` 为 0），本来无计时可暂停；    
+  交卷态则必须把暂停持久化一起清掉，否则同一个 `submit_id` 再进来会**隐形冻住**（界面没有任何痕迹）。    
+  交卷那一支除了摘键还要把 `gth-paused`、`gth-timer-no` 与宿主 `title` 一起擦掉——那块头部归错题助手的解析界面    
+  （ADR 0005），留一道琥珀色或下划线就是在别人界面上涂鸦。    
+  按钮宿主**不兜底到 `.operation-dati`**，同上。
+- **三页都有第二条可见时钟 `network_offline`**（`$scope.offlineInterval` → 「离线时间 …」）：它不在    
+  `localStorage` 下，阀门管不到，计时暂停也不管它。
+- **`qSrc` 是可失效缓存，不再是只增映射**：「与站点核对」跑全一趟之后，这一趟没见到的 id 一律剪掉；    
+  没跑全时只并不清。`mergeConcurrent` 因此给它开了一条例外——按 `qSrcAt` **取新的那一份**，不走并集，    
+  否则这边刚剪掉、另一个标签一保存又并回来。**`SITE_LIST_CAP` 与 `pagedFetch` 里那句 `page >= 49`    
+  是同一件事的两端**：改一边不改另一边，就会把没跑全的一趟当成全量去剪名单（判据 T66 钉住这一对）。
+- **题本成员 = （动过笔 ∪ 模考收录）− 站点在列**，而且 `bookIds()` 在没核对过一次时**直接返回空表**：    
+  摊开、重练取题、导出三条路共用这一条口径，不许只在界面上遮一层——只遮界面，「题本」那一档照样会把    
+  站点在列的题发出去。理由与措辞见 `docs/adr/0005` 决策 15 与 32。
+- **「补齐题面」没有按钮了（2026-10-08 改自动）**：摊开题本就自动补当前这一页缺的，    
+  当前页排队首、其余往后排，每跑完一批重排队列，直到 `faceTried` 把队列清空。    
+  **`faceTried` 是这条链的刹车**：自动跑是"跑完重排一次"，不记试过哪些题，    
+  那批下架或认不出科目的就会让它无限循环。接口与限流见下面那条 `apiSubjectFace`。
+- **错题页每题头上那四颗（答错次数 / 掌握状态 / 笔记 / 复制题目）不是站点原生的**，是本脚本注入的    
+  `.gth-qbar`（`injectListUI`）。站点在每题上只画两样：题号淡蓝方块 + 右下角「展开 查看解析 ▼」。    
+  所以「题本对齐错题页」对齐的是我们自己那一行；现在两边共用同一套类名、同一份 `refreshBadges()` 刷新、    
+  同一份 `bindQbar(bar, itemOf)` 绑定（取题面的函数由调用方给，两边数据源不搅在一起）。
+- **「与站点核对」逻辑只有一份 `reconcileWithSite(btn)`，一次做完四件事**：补模块、补科目、    
+  记来源名单（含剪枝）、回填快照。2026-10-08 起它**也是自动的**：摊开错题页或收藏页跑一次，    
+  题本空态那一路也跑一次（题本开着时 `injectListUI` 会早退，少一条题本就永远停在「正在核对」）。    
+  `reconcileTried` 让它**失败也不重试**——这条调用在 400ms 观察器的射程里，重试等于每半秒打一遍站点接口。    
+  成员口径没变：没核对过就没有题本成员。它另外还挂在「升级后点我」那颗键的末尾（见下面那条）。
+- **题本顶部就三档筛选**（2026-10-08 用户改判：先说「不要加任何筛选」，当天又要求「和行测、公专一样加上    
+  科目类型筛选与搜索，但筛选条件保持克制」）：科目、模块、关键词。**只此三档**——来源、掌握状态、    
+  快照齐不齐都不摆：前两个在笔记那一屏已有入口，最后一个是内部概念，摆出来只会让人猜它是什么意思。    
+  关键词要读题面，比科目与模块贵一档，所以**只在真输了字的时候才跑**，且匹配前先 `stripHtml`    
+  （题面是 HTML，不剥的话搜一个「p」命中每一题）；输入框带 200ms debounce；「清空筛选」只在真筛了时    
+  露出，筛到空的那一屏也画同一颗出口。    
+  判据对 `gth-bf-mock|mast|snap` 是 `miss`（那三档不许借这一轮回来），对三档的行为各有真跑一遍的断言（T71）。
+- **「升级后点我」合成一颗**（2026-10-08）：原来那三颗（与站点核对 / 清理残留 / 清孤儿快照）名字没有一张    
+  脸能让人看懂，于是没人敢点。现在是一颗绿色键，一次点完三件事：先扫齐要删的、**列清单弹一次确认**、    
+  删完接着核对。合并入口不等于静默删数据——AGENTS 那条「不自动删任何东西，删谁都是替用户做决定」仍然成立，    
+  只是把三次追问压成一次。无东西可删时不弹空框，直接去核对。
+- **「补齐题面」与模考收录打的是同一个接口**，地址只留一处出处 `apiSubjectFace`    
+  （`api/v2/tiku/{examType}/{id}/analysis`）。它不是锦上添花：题本剩下的成员恰好是站点两个列表回填够不到的    
+  那批，没有这条路它们永远只有 240 字题干引文。`examType` 先认笔记上记过的科目（**只认 0 与 1**），    
+  认不出就行测与公专各试一次；一题一个请求、题间隔 180ms、一轮上限 300 题。
+
+### 逐题用时（`docs/adr/0007`，本轮新增，实测来的）
+
+- **站点没有逐题用时**：交卷上报的 `user_answer.push({subject_id:data.id, answer:[…]})` 每题只带题号与选项；    
+  唯一的时间明细 `$scope.detail_elapsed_time[val.name]` **按板块名键**，粒度到板块为止。想要"每题几秒"只能自己记。
+- **专项页的解析分支根本不重建那份板块用时**：`if("finished"==status)return …, void $scope.showAnalysis();`    
+  排在 `$scope.detail_elapsed_time={}` 之前。别指望从 scope 上读到它做复盘。
+- **专项页一屏一道题**才让"这一秒属于哪道题"判得干净（`currentIndex == subjectObj.index` 那道题的 `id`）；    
+  practice 会随机跳板块、模考页是 swiper（DOM 里同时约 7 格），所以这两页本轮**不记**——要扩先解决归属歧义。    
+  **材料组卷面例外**：那里一屏是一段材料，`currentIndex` 只在材料首题号之间跳，所以记账单位是**材料**    
+  （键天然落在材料首题 `id` 上），展示端认出 `opts.length > 1` 就写区间「第 11–15 题」、    
+  小条上写「本材料 04:49」、入口计数写「20 题 · 4 段材料」——**不拆分也不均摊**（`docs/adr/0007` 决策 8）。    
+  `opts` 是站点挂在每一项上的派生字段，拿不到就退回单题号显示，不报错。
+- **分场键用 `exam_id` 不用 `submit_id`**：`submit_id=publicjs.getSearch().submit_id||""`，答题态可能是空串，    
+  而站点自己的续答缓存就叫 `zhuanxiang_cache"+exam_id`。两处都要读（`search` 与 `hash` 里 `?` 后那串，hash 覆盖 search）。
+- **认不出当前题的那一秒落 `lost`，不许猜给上一题**；**暂停期间的那一秒照样记在当前题头上**    
+  （2026-10-09 用户改判：这一份要的是真实用时，离开两分钟就是两分钟；旧口径「暂停单列、不从当前题扣」已撤）。    
+  `paused` 仍然逐秒累计，但退成**只用于展示「其中暂停多久」的副表**——既不许再加进合计（那是双计），    
+  也不许拿它去扣题。恒等式现在是「**合计 = 各题之和 + 未归属**」，这是这份数据唯一的自证方式，    
+  界面上（那颗键的悬浮说明）就按这一式子出数。口径见 `docs/adr/0007` 决策 2。
+- **后台标签页里浏览器节流 `setInterval`**，我们的分摊与站点那份总时钟同源一起变慢；    
+  换来两边永远对得上账，代价是"挂后台多少秒"这种精度给不了，别为它另造一只表。
+- **写的人只有一个**：记录写在计时那份自己的键 `gth_qtime_<ctx>`，助手只读（判据禁 `setItem(QTIME_KEY)`）。    
+  不并进助手那个整库，因为 ADR-0004 的"写盘前重读、只并只增"只在助手一份里实现了。    
+  落盘同样逐字段**取大合并**（只增），并进来的秒数记进 `merged` 让界面上看得见——踩过一次过期标签整库回写。
+- **两份脚本各自现算 `CTX`，表达式必须一字不差**（`location.pathname.split('/')[1] || 'mingshi'`）：    
+  计时那份写键、助手那份读键，口径一错是**静默读不到**。已有跨文件判据守着，同 `pageNg()` 那条同源拷贝的规矩。
+- **专项解析页的用时入口与小条（笔记 / 复制题目 / 整理本题那一排）挂在内容区右上角**：宿主是内滚盒子 `.question-box`，    
+  里面一个 `.gth-ztop` 容器 `position:absolute;top:12px;right:24px;gap:8px;z-index:6`。    
+  间距写死、位置不跟站点文字走：**跟着站点换行就会今天挪明天挪**。    
+  **容器自己不压白带**（2026-10-08 用户口径：一整条 `background:#fff` 浮在题干上不像原生），    
+  底色改由里面每一项自带一层极淡的 `rgba(255,255,255,.82)`——**那层底不是审美**：    
+  这一排压在站点内容上方，全透明就会和题干表格叠在一起。    
+  **第一版挂的是站点蓝色头部 `.operation-dati`，2026-10-07 被用户否掉**——那一行视觉上被裁、且压住站点自己的头部；    
+  判据现在直接 `miss(/operation-dati/)`，那份里不该再出现这个名字。    
+  浮窗与笔记浮窗**同宽** `min(340px,72vw)`，一行只有序号与用时（材料组下序号是区间，    
+  序号列按内容宽、不换行——写过一次 `flex:0 0 46px`，把「第 11 题」折成了两行）；    
+  **题干引文与一切解释性文案按用户口径删掉**    
+  （"没列出来的题＝…"、"选中题干或解析里的文字即可划线"都不要）。
+- **浮窗常驻 DOM，可见性交给 CSS 的 `:hover` / `:focus-within` / `.on` 三种开法**，点击只 `classList.toggle('on')`    
+  不重画整块。三种开法少一种都不行：只写 `:hover` 的话键盘与触屏用户永远打不开。    
+  （旧写法是"点击改标志位 + 当场重画"，那条已随浮窗化作废——但**它背后的教训留着**：body 上那个观察器只    
+  observe `childList`，点击不产生 childList 变化，所以任何"只改内存标志位"的交互都必须自己重画，否则就是按了没反应。）
+- **签名要按"每题各几秒"算而不是按总和**：两笔同为 300 秒但分布不同的记录，浮窗内容不同就必须重画。    
+  这里踩过一次很阴的坑——同一个文件里 `recapSig` 定义了两次，后定义的那份（按总和）胜出，前一份（按分布）成了死代码。
+- **专项解析页那条用时入口是对 ADR 0005 决策 13「只做逐题小条」的明写例外**，只到专项练习页为止；    
+  `mocks` 与 `analysis.html` 不因此获得任何入口。
+
+### 脚本猫的沙盒与「取页面真身」（两半各一份，改一处要想想另一处）
+
+- **元数据块里一行 `@grant` 都不写 ≠ `@grant none`。** 脚本猫 `exec_script.ts` 只认 `grantSet.has("none")`    
+  这一支不建沙盒；没有 `@grant` 照样走 `createContext` → `createProxyContext`。沙盒的 `window` 是    
+  `PseudoWindow`（`create_context.ts` 里 `USE_PSEUDO_WINDOW = true`），成员来自**脚本猫自身初始化那一刻    
+  对 host window 的属性快照**，所以页面之后才挂上的 expando 读不到——`angular` 正是这种：    
+  `window.angular === undefined`，而 `unsafeWindow.angular` 是真身。官方测试 `exec_script.test.ts`    
+  就是这个形状（先建 context、后挂的属性，`unsafeWindow` 看得见而 `window` 看不见）。
+- **`document` 是绑回真 window 的 accessor，所以「DOM 写生效、页面对象写不生效」会同时出现。**    
+  这就是计时暂停 1.0.6 的失效形态：`freezeDom()`（每 150ms 硬改文字节点）照常冻住显示，    
+  `installGuards()` 却一个阀门都没装上——界面看着暂停、底下照跑。**兜底显示不许替功能说话**：    
+  现在冻显示排在验证之后，验不过就置灰 + 写明原因，而不是先冻住再说。
+- **取页真身在两半里各有一份实现**（助手那半 `window.angular || unsafeWindow.angular`，    
+  计时那半 `pageNg()` 三条回退并记下走的是哪条）：两半不共享作用域，也就共享不了这个函数，    
+  所以合并之后这两处仍然各留一份（判据 T33 守计时那份、T33 还守「计时段不许引用助手半的名字」）。
+- **`catch` 里不许只 `return`。** 上面那条失效之所以藏了一整版，就是因为取 scope 整段包在    
+  `try { ... } catch (e) { return; }` 里。现在每个 catch 都往 `ngErr` / `storeErr` 落一句话，    
+  悬停在按钮 title 上看得见，控制台另有 `console.warn('[计时暂停] …')`。
+- 脚本头 `@namespace` 还写着 tampermonkey.net，`@grant none` 之前那份也确实是在篡改猴下写成的——    
+  篡改猴无 `@grant` 走页面世界，所以它当年真能用；换到脚本猫才变成现在这样。**同类"平台搬家把静默    
+  失效变成显式失效"的坑，先怀疑取不到对象，再怀疑算法。**
 
 ### 时序、重绘与观察器
 
-- `saveStore()` 是整库回写：内存快照过期的标签会把别的标签刚写的数据擦掉（踩过——模考刚收完 49 题，
+- `saveStore()` 是整库回写：内存快照过期的标签会把别的标签刚写的数据擦掉（踩过——模考刚收完 49 题，    
   另一个标签一保存就全没了）。写盘前重读磁盘、只并「只增」那几块的规则见 ADR-0004。
-- 面板内容只按 `storeRev` 重画（`saveStore()` 与多标签合并各 bump 一次）。`storeRev` 的 `var` 声明
+- 题面快照桶 `store.snaps`（ADR 0005 决策 5、6）在 `mergeConcurrent` 里的比法是**题面先到先得、但 `analysis`    
+  从空串变非空要补上**：站点收起解析时 `item.analysis` 是空串，「先到先得」若一路走到底，    
+  一份收起态抓下的快照会把这道题永久钉成没有解析的那一份。取题面的次序是 `snaps → mockQs → 当前页 scope 项`，    
+  同一 id 两份内容不一致时 `warn` 不自动改写（沿 ADR 0004）。
+- **`snapCopy` 必须连 `analysis_shadow` 一起抄**：站点收起解析时正文在那个字段上，只抄 `analysis` 就等于    
+  在收起的那一刻抓一份**天生残缺**的快照。而 `backfillSnaps` 对已有快照的 id 直接早退（那是决策 27「不囤题」    
+  的代价），所以残缺一旦写成就再也补不回来——重扫与重练取题都白跑。题本因此按三态判：    
+  **`snapState()` 返回 `full`（题面与解析都在）/ `part`（残缺，缺解析）/ `none`（没快照）**，    
+  补齐队列按的就是这三态——写成二元「有没有快照」就会把残缺那份当成已齐，永远不再去要。    
+  （2026-10-08 之前这里还有一棵「只看待补快照」的筛选露出 `part` 与 `none`，随题本撤筛选一起删了。）
+- 卡片上那句提示**不许写「摊开一次就补」**：`injectListUI` 与解析页的绑定只登记 `itemsById` 引用表，    
+  列表回填的唯一调用点在 `fetchByFilter`（重练取题与「与站点核对」共用它）。    
+  补得上的路现在有三条——摊开题本（自动补齐排队列）、在那一页再动一次笔（写笔记或划线）、    
+  或让那道取题路过一遍这道题。
+- 快照的体积没有上限也不裁剪（ADR 0005 决策 7）：`saveStore()` 写失败时把异常原样报出来并提示先备份再清理，    
+  **不自动删任何东西**——删谁都是替用户做决定。
+- 面板内容只按 `storeRev` 重画（`saveStore()` 与多标签合并各 bump 一次）。`storeRev` 的 `var` 声明    
   必须早于 `saveStore()`，否则是同一类启动顺序崩溃。
 - body 上那个 MutationObserver **只 observe `childList`**：改属性不惊动它，这是「只写属性、不主动重绘」成立的前提。
-- 往界面写之前先比内容：无脑重写 `innerHTML` 既会喂观察器形成 400ms 往复，也会把展开的划线清单、
-  正在编辑的批注框一瞬间收回。
-- 划线重绘的签名跟「题目文本 + `list.length`」走，不能用本次实画条数——只要有一条失效或改过，
+- 往界面写之前先比内容：无脑重写 `innerHTML` 既会喂观察器形成 400ms 往复，也会把展开的划线清单、    
+  正在编辑的批注框一瞬间收回。**这条不是抽象提醒**：解析页逐题小条一度每轮都重画一次，    
+  重写本身又是 childList 变更 → 观察器再排一轮，循环永不平息，用户报上来的现象是「严重内存泄露」。    
+  现在小条带签名 `data-sig`（题号 + 有没有笔记 + 几条划线 + 收没收录），签名没就不写；    
+  `data-gth-qid` 也先比再写。判据 T62 守着，把签名比较删掉即判红。    
+  **实测对照**（夹具里那台 `GTH_CHURN` 计数器）：删掉签名比对后 body 节点变动 3 秒 88 → 9 秒 172    
+  （约每秒 14 个，永不停）；修好后 3 秒 32 → 9 秒 32（停住）。
+- **页面来的东西只存副本、而且要剪**：`itemsById` 存 `snapCopy(item)` 而不是活的 scope 对象——    
+  一个 scope 顺着 `$parent` / `$$childHead` 能把整棵 `$rootScope` 和它挂的全部数据钉住不放；    
+  `qNodes` 存的是 DOM 节点，站点重渲染后旧节点已脱离文档却仍留在表里（那是 detached DOM）。    
+  所以每轮观察器开头跑一次 `prunePageRefs()`：`isConnected` 为假的条目连着 `itemsById` 一起删。    
+  判据 T63 守这四条（不剪、改存活对象都判红）。
+- 划线重绘的签名跟「题目文本 + `list.length`」走，不能用本次实画条数——只要有一条失效或改过，    
   实画条数永远对不上，观察器每个周期都拆了重画（闪烁、CPU 空转）。
-- 划线连续两次定位失败才判失效；内容尚未渲染（`ng-bind-html` 没跑、整块重绘中）时不落笔，
+- 划线连续两次定位失败才判失效；内容尚未渲染（`ng-bind-html` 没跑、整块重绘中）时不落笔，    
   否则会把「还没渲染」写进库变成永久误判。
-- 取题与组卷是几十秒级异步，按钮必须置灰；`modulesLoading` 挡同轮并发、`modulesLoaded` 挡站点返回空表时
+- **节点被摘掉不等于定位失败**：`repaintHighlights` 只遍历还在的 `[data-gth-qid]`，所以专项页切题时    
+  `ng-if` 撤走的整题不会累计 `miss`、不会误判 `lost`；解析块没展开时 `paintRoot` 走 `hlHoldLost` 同样不落笔。    
+  这是「闸门可以在解析未展开时就放行」的底气（ADR 0005 决策 20），别把它当漏洞去"修"。
+- 取题与组卷是几十秒级异步，按钮必须置灰；`modulesLoading` 挡同轮并发、`modulesLoaded` 挡站点返回空表时    
   反复重发；失败不置 loaded，留给下一次用户动作重试（这两道门源于观察器一度每次重绘都跑 `syncFilterUI`）。
+- **盖住全页的模态一开着，`refreshPageUI` 就整轮早退**（第一句 `if (!quizEl.hidden) return;`）。    
+  重练那一屏底下错题页、页边轨道、划线全被盖住，跑一遍谁也看不见；而这一屏的时钟每秒写一次头部——    
+  写一次就是一次 childList 变更，观察器白排一轮，白跑里再写界面。    
+  实测（夹具那台 `GTH_CHURN`，2026-10-08 复算）：**有守卫**时答题态 3 秒 110 → 9 秒 110、    
+  交卷态 122 → 122、补充题本 380 → 380，**全部停住而时钟仍在走**；    
+  在临时副本上把那句早退删掉再量，同一页是 162 → 330（约每秒 28 个，不停）。    
+  这两个数不是同一次跑的，别拿 110 当"修前"、又拿 110 当"修后"——那对数字第一次量是在一份被突变脚本    
+  污染过的文件上得到的，方向对、绝对数不可复现。**要引用就照上面这一组（带对照的那一次）。**    
+  **新加整屏浮层时要记得在这里认它。**
+- **凡是"每秒都要写一次"的显示，只改文本节点的 `nodeValue`**（`setClockText`）。    
+  `innerHTML` 与 `textContent` 都会替换子节点、都触发 childList；观察器只盯 childList，    
+  改字符不算变更——这是"每秒写但不喂观察器"唯一干净的写法。
+
 
 ### 界面结构与样式
 
-- 批注轨道用 `position:fixed` 镜像 `.content` 的视口、内部按 `scrollTop` 反向平移。纯 CSS 做不到：
+- 批注轨道用 `position:fixed` 镜像 `.content` 的视口、内部按 `scrollTop` 反向平移。纯 CSS 做不到：    
   浏览器把「一轴 clip + 另一轴 scroll」降级为 hidden，`overflow-clip-margin` 失效。
-- 滚动容器不能写死：错题页列表包在 `.content`（`height:600px;overflow:scroll`），收藏页没有这一层，
-  靠 capture 阶段同时收内部滚动与页面滚动。选择器必须是**子**选择器——题目区也有一个 `.content`（题干层），
+- **题目卡片的外壳只有一份（`.gth-qcard`），而且它就是「没有外壳」**：白底、无边框、无圆角、无左色条、    
+  `max-width:none`、`margin:0`。题本与重练复盘两边都挂这一份，卡片之间靠 `.gth-book-list` 的 `gap` 隔开，    
+  外边距一律不写（再写一条 `margin-bottom` 就是和 gap 叠成两倍）。    
+  这条来历留着有用：曾经题本复用重练报告的 `.gthq-r-item`（带 `max-width:880px;margin:0 auto` 与左色条），    
+  于是缩成内容宽 395px——用户 2026-10-08 报的「题目太窄」就是它，而**报告与题本共用一个渲染器，    
+  看不出约束是哪边多出来的**。2026-10-08 第二轮把 `.gthq-r-item` 整个删掉，两边统一成 `.gth-qcard`。    
+  另一半原因仍然成立：视图本身要带站点那个 `zero-flex-1`（`bookViewEl.className`），漏了就撑不满。
+- **注入界面里凡是照站点那一屏画的尺寸与色值，一律抄样式表、不自己定**（样式表可 curl：    
+  `…/wxpage/tiku/css/gongan.min.ebe4763b.css`，116559 字节）。这一轮量到的几处：    
+  题号方块 `.sequence-box` 25px 见方 `#b3c8e9`、题号列 `.sequence` 宽 40px（所以页边那一行小条的    
+  `padding-left` 也是 40px，标签才与题干左缘对齐）；选项圈 `.circle` 18px / `border-radius:80%` /    
+  `1px #b2b2b2`，正确 `5px #0c0`、错选 `5px red`、当前 `5px #5188f5`，文字列 `padding-left:10px`；    
+  解析展开那一行 `.bottom-line .line` 是 `flex:1;height:1px;background:#ddd`，    
+  `.text` 是 `#8c8c8c` / 14px / `padding:0 30px 0 10px`，末尾那枚三角用 `:after` 画    
+  （`border-top:10px solid #8c8c8c` + 两侧 transparent），**翻面靠换 `:after` 的 border 方向**，不重画；    
+  题干 / 材料 / 解析同一档排版 `line-height:2;color:#222221;font-size:14px;word-break:break-all`。    
+  判据只锁形状与这几条字面值，不锁语义色变量。    
+  **一处不是逐字抄的**：站点那条 `.line` 写的是 `-webkit-box-flex / -moz-box-flex / -ms-box-flex:1`    
+  那三件套（老 flex 语法），我们落的是裸 `flex:1` —— 功能等价，但别以为样式表里就有 `flex:1`。
+- **补充题本是与助手视图同级的第二块视图，不是一块浮窗**：两块视图互斥，壳的收放（藏站点内容、安家、    
+  两颗菜单项的激活态）只在 `applyChrome()` 一处做——各写一遍迟早漏掉另一半。`setStatus` 按当前块挑状态栏    
+  目标（`activeStatus()`）：把「补齐题面」的进度写进藏起来的那块，等于什么都没写。
+- **补充题本一页 20 题 + 一口内滚盒子（2026-10-08 用户口径，对标站点错题页）**：`.gth-book-scroll` 是    
+  `overflow-y:auto`、高度 `min(600px,calc(100vh - 300px))`（站点那份 `.content` 是死写的 `600px`），    
+  翻页器在盒子外面，翻页时**显式把 `scrollTop` 打回 0**——只换 `innerHTML` 的话滚动位置会留在原处。    
+  每题的解析交给 `questionCardHtml(q,{anaToggle:1})` 那段：`hidden` 属性收起（不是删节点，划线还要在小字里落点），    
+  展开那一行靠 `.on` 切两段文案、不重写 `innerHTML`。**展开行排在解析正文之后**——    
+  站点模板就是「题干 → 选项 → `.analysis` → `.bottom-line`」，反过来就成了按钮在上、内容在下（`T65` 钉顺序）。    
+  题号按整本连续折算 `(页-1)×20 + 序`，与站点模板里那句 `(currentPage-1)*itemsPerPage + $index + 1` 同一个算法。
+- **「有 HTML 不等于接了线」**：分页器上一版只有 `bookPagerHtml()` 出的按钮，没有任何监听，51 页点哪一颗都不动    
+  （用户 2026-10-08 报「保证翻页功能正常」就是这个）。凡是从模板字符串里长出来的键，都要在判据里指出谁绑了它    
+  （`T68` 现在钉 `bindBookPager()` + `renderBookList()` 真的调它）。    
+  **同一轮里"删掉一颗按钮"也要有接线判据**：「补齐题面」与「与站点核对」改成自动之后，    
+  按钮没了，那条链的唯一入口就只剩 `renderBookList` 里的一句调用——把那句删掉界面一切照常，    
+  只是缺的东西永远缺着。这种"入口消失"的改动比加入口更容易留暗坑。
+- **补充题本的笔记摆在页边那一栏，不在题面旁边**：`railContent()` 在题本视图下返回 `#gth-book-scroll`，    
+  页边框就对着这口盒子的右缘 + 24px 落位——所以笔记落在内框**外**，与站点错题页同一套 `.gth-aside`。    
+  这一页摊几道题，那一栏就摆几张批注卡（`renderBookSides()` 按 `bookPageIds()` 来），位置仍由    
+  `placeRailItems()` 按卡片此刻的视口位置算。    
+  那一栏是错题页与本视图共用的，所以自己人挂 `data-book="1"`：收尾时只摘自己那几张，站点那批不动    
+  （摘了也回不来——`injectListUI()` 认 `dataset.gth`，不会为已注入过的卡片再补一次）。    
+  同理，题本开着时 `injectListUI()` 直接早退：站点列表这时是藏起来的，往里注入只会把批注卡丢进我们这栏。
+- **笔记编辑区只有一份实现**（`noteAreaHtml` / `bindNoteArea` / `bindNoteAreas`）：预览态给「编辑」，    
+  编辑态给「保存 / 取消」，解析页那扇浮窗与重练报告的卡片笔记共用。**重练报告那张卡片一度连输入都是断的**    
+  ——抽组件那轮把绑定从 `bindQuiz` 里搬走了却没接回来（旧版是 `$$('textarea[data-note]', quizEl)` 就地绑的）。    
+  现在 `bindQuiz()` 里那句 `bindNoteAreas(quizEl)` 就是接线，`T61` 钉着它。    
+  编辑态一律不落库：`setNote()` 只在「保存」这一条路上被调用（`T61` 数着 `paint('view')` 两个出口）。
+- 滚动容器不能写死：错题页列表包在 `.content`（`height:600px;overflow:scroll`），收藏页没有这一层，    
+  靠 capture 阶段同时收内部滚动与页面滚动。选择器必须是**子**选择器——题目区也有一个 `.content`（题干层），    
   后代写法在收藏页会误命中第一道题的题干。
-- 轨道宽度按「可视区右缘 − 落点」现算：CSS 里那个 `clamp(160px,(100vw-1000px)/2-24px,280px)` 把容器右缘
-  当成了内容右缘，实测卡片右缘越过 `clientWidth`、`elementsFromPoint` 在那个点上取不到任何元素；挤不下就不摆。
+- 轨道宽度按「可视区右缘 − 落点」现算：CSS 里那个 `clamp(160px,(100vw-1000px)/2-24px,280px)` 把容器右缘    
+  当成了内容右缘，实测卡片右缘越过 `clientWidth`、`elementsFromPoint` 在那个点上取不到任何元素；挤不下就不摆。    
   **这与 `.caret` 撞车是两回事**，当时被当成一件、白改了两轮。
-- 一行划线里 `.t` / `.n` 的 `parentNode` 是 `.bd` 而不是本行，取下标一律 `closest('.gth-hlp-item')`；
+- 一行划线里 `.t` / `.n` 的 `parentNode` 是 `.bd` 而不是本行，取下标一律 `closest('.gth-hlp-item')`；    
   从 `.bd` 拿不到 `data-hl`，`Number(undefined)` 是 NaN，点了就是没反应。
-- 原生二级标签（日期 / 行测 / 公专）**会写 URL**：实测 `gongan2_index.min.js` 里 `switchExamType` 是
-  `$scope.exam_type=exam_type, $location.path(…).search({exam_type:exam_type})`，错题页那份写的是
-  `path("/")`（跳回题库首页），收藏页那份写 `path("shoucang")`。**这一条以前在这里写反了**
-  （原写「不改路由，hashchange 感知不到」）。我们仍然显式收起助手视图，理由是不能假定每个控制器都写、
-  且写的时候会整页跳走；`viewOn` 若保持 true，观察器会持续重隐藏原生内容，标签就再也打不开。
+- 原生二级标签（日期 / 行测 / 公专）**会写 URL**：实测 `gongan2_index.min.js` 里 `switchExamType` 是    
+  `$scope.exam_type=exam_type, $location.path(…).search({exam_type:exam_type})`，错题页那份写的是    
+  `path("/")`（跳回题库首页），收藏页那份写 `path("shoucang")`。**这一条以前在这里写反了**    
+  （原写「不改路由，hashchange 感知不到」）。我们仍然显式收起助手视图，理由是不能假定每个控制器都写、    
+  且写的时候会整页跳走；`viewOn` 若保持 true，观察器会持续重隐藏原生内容，标签就再也打不开。    
   左菜单的激活态由 `ng-class` 掌管，摘它的 class 会与它打架（表达式值没变就不重加），只做视觉压制。
-- `KEYACT` 那份「带 click 的 div / span」名单是唯一出处：焦点环 CSS 由它生成，判据 T24 拿它回脚本核对类名，
+- `KEYACT` 那份「带 click 的 div / span」名单是唯一出处：焦点环 CSS 由它生成，判据 T24 拿它回脚本核对类名，    
   防「改了界面类名却没改名单」这种界面上完全看不出的漂移。真 `<button>` 不进名单，它们自带键盘。
 - 选区必须在工具条出现那一刻抓成快照：一点工具条的按钮，浏览器选区就没了。
-- `qid` 可能被塞了引号，进选择器前先剥掉；改完某题的划线数据必须抹掉 `data-gth-paint`，`paintRoot`
+- `qid` 可能被塞了引号，进选择器前先剥掉；改完某题的划线数据必须抹掉 `data-gth-paint`，`paintRoot`    
   才认它是新节点、重新落笔。
-- `PUNCT_RE` 不能带 `/g`：带 `g` 时 `RegExp.test()` 会前移 `lastIndex`，连续标点隔一个漏一个，
+- `PUNCT_RE` 不能带 `/g`：带 `g` 时 `RegExp.test()` 会前移 `lastIndex`，连续标点隔一个漏一个，    
   模糊匹配跟着失准。
-- 模考收录是双通路（scope 主路 + XHR 嗅探兜底）：`@run-at document-idle` 之前的请求抓不到——解析页是点击之后
-  才加载，够用；嗅探递归限深 6，数组里 ≥60% 像题目就整组收下、不再下钻；沙箱拦截失败静默降级。
+- 模考收录是双通路（scope 主路 + XHR 嗅探兜底）：`@run-at document-idle` 之前的请求抓不到——解析页是点击之后    
+  才加载，够用；嗅探递归限深 6，数组里 ≥60% 像题目就整组收下、不再下钻；沙箱拦截失败静默降级。    
   嗅探缓存 3000 条按写入顺序淘汰最旧，单轮补题面上限 300。
-- 导出文件名前缀表每个来源都得有一项：少了它 `runExport` 会静默落到默认前缀，用户在下载目录里看不出
+- 导出文件名前缀表每个来源都得有一项：少了它 `runExport` 会静默落到默认前缀，用户在下载目录里看不出    
   这批是不是模考那批（只有表格里「来源」列能区分），前缀名跟着 `SRC_NAME.mock` 走。
-- 来源或模块勾选变化时要剪掉不再存在的模块名（收录被清空时也剪），否则残留名成了看不见的筛选；
+- 来源或模块勾选变化时要剪掉不再存在的模块名（收录被清空时也剪），否则残留名成了看不见的筛选；    
   只勾「模考收录」时日期 / 科目 / 行测模块都不参与取题，必须收起来——摆着能点却不生效就是骗人。
+- 长出「题本」这第四档来源时，`SRC_KEYS` / `SRC_NAME` / `EXPORT_PREFIX` 三处一处不能漏：    
+  少了前缀 `runExport` 会静默落到默认前缀，用户在下载目录里认不出这批（同上一条导出前缀那个坑）。
+- 题本与「笔记」tab 是同一批题的两个入口（一个是题面视图、一个是文本与素材视图），两套筛选状态不共享——    
+  **必须给两边互相定位的跳转**，否则「重复入口」这条就是纯重复。这是 ADR 0005 决策 9 当场认下的代价，    
+  不是实现到后面才发现的。
+- 解析页那扇笔记浮窗**锚在逐题小条上**（`.gth-abar{position:relative}` + 面板 `position:absolute;top:calc(100%)`），    
+  不是 `position:fixed`：这样它跟着题目一起滚、也不用算视口坐标。三条约束别破：    
+  **键面恒为「笔记」**（不再随状态改成写笔记/预览/改笔记——用户 2026-10-08 口径）；    
+  **预览态给「编辑」，编辑态给「保存 / 取消」**，编辑态下离开面板（点空白、点收起）一律等于取消、草稿不写库，    
+  所以编辑态里那颗「保存」是唯一的写入点；**浮窗开着时不重画小条**（`bindAbar` 用 `innerHTML`，重画就把编辑中的框抹掉）。    
+  点空白收起是 2026-10-08 的用户口径，**撤回了「只由按钮收回，不许挂全局点击监听」那条**——    
+  当时怕的是把正在写的字弄丢，现在有这个风险的草稿本来就要用户自己按下「保存」；    
+  监听挂在 `document` 的捕获段，先认自家浮层（`HL_BLOCK_SEL` 加 `#gth-hlnote,#gth-hlmenu`），点它们不算点空白。    
+  **同一口径 2026-10-09 起也用给专项页那条用时入口的浮窗**（`.gth-qtime`）：只由那颗键收回的话，展开的卡片    
+  就赖在屏幕右上角，用户点到哪儿都收不掉（报上来的原话：「卡片展开后无法收回」）。
+- **复制只有一种反馈**：四颗复制键（错题页与题本的小条、解析页那排小条、划线工具条、整理本题那一屏）    
+  全部走 `copyWithToast`——成了在页面底部弹一句「复制成功」，没成说没成。以前是各写各的    
+  （「已复制」「已复制到剪贴板」，另有两颗什么都不说），用户 2026-10-09 要求统一。
+- **图片缩放分两步问：「该不该缩」按句子角色，「缩到多少」按它本来多高**（`imgFitRole`，2026-10-09）。    
+  第一性依据：公式是句子的一部分（等号后面、单位前面），图是句子指向的东西（如下图所示）；    
+  **宽高比只是公式的副产物**，拿它当主判据，竖着的柱状图（180x520）与横着的多行表格（650x226）    
+  都会被压成一行高，而它们缩掉就没法看了。
+  - **第一步该不该缩**（`imgTextRole` 返回 `inline`/`formula`/`figure`/null，前三层不看形状）：      
+    ① `imgIsLead(before)` 为真 → `figure` 原样。它**必须是个函数而不是一条正则**：      
+    「如下图可知」「如图可知，增速很快」是**引述**（在说图），不是**领起**（在引出图），      
+    跟着它们的图仍可能是式子；而 `/如[下上]?[图表]/` 两条都命中，一条正则表达不了这个区别。      
+    （另有 `IMG_LEAD` 收「图表所示/饼图/柱状图/统计表」那类本身即图表的词。）      
+    ② `IMG_OP_TAIL`（`=＝:：是为约×÷+-` 收尾）或 `IMG_CONT`（亿元/倍/，/。/则/故… 开头）→ `formula`。      
+    ③ 两边都顶着字 → 是句中的图。够长的（每边 ≥ `IMG_INLINE_TEXT`=8）判 `formula`；      
+    两边都不长的（每边 ≥ `IMG_BOTH_SIDES`=2）判 `inline`——「气温经常在[0℃]上下波动」前文只有五个字，      
+    按八个字判会掉到形状兜底里去（用户 10-09 晚第二张截图）。      
+    ④ `imgLeadNearby` 逐层往上找**上一段**的领起词。停手条件是「再上一层就出了 `IMG_TEXT_HOST`」      
+    而不是「当前节点在内容区里」：图自己那个 `<p>` 也在内容区里，按后者差一层就永远看不到上一段。      
+    ⑤ `IMG_MATERIAL_HOST`（材料）先于一切豁免：一个像素都不许动。      
+    ⑥ 三层都定不下来（图片独占一块、前后一个字都没有）才轮形状：题干与选项**只认竖着的**      
+    （整张选项就是一张分式），解析与笔记那一屏竖式与细长条都算。
+  - **第二步缩到多少**（`imgSizeRole`）：**按它本来多高分档，不按「像不像式子」**。      
+    `formula` 档的 `max-height:4em` 是**封顶**，对本来就没到顶的图是**空操作**——      
+    `120x40` 那枚 40px 远小于 4em(=56px)，判成 formula 也照样不动，      
+    这正是用户 10-09 晚两张截图里「已经判对了还是大」的另一半原因。      
+    所以：本来 ≤ `IMG_INLINE_MAX_H`(56px) 的走 `inline` 档（`height:1.15em`，**定高**，      
+    按 intrinsic 比例缩，宽的式子一并收住）；超出的走 `formula` 档（`max-height:4em;max-width:340px`）。      
+    `inline` 档定高、不封顶，所以反过来也成立：120x40 那种图判对了就一定缩得动。
+  - 「前后文字」按 DOM 顺序取且**跳过 `<br>` 与内联包裹**（`<span>`/`<font>`/`<b>`）——      
+    编辑器爱把字包起来，只认 `nodeType === 3` 的紧邻兄弟会漏掉一半排版。      
+    但**不跨块取**：祖先的 `textContent` 会把隔了几层的正文算进来，统计表就被误压成一行高。
+  - **247x144 那一档「故意不动」的旧取舍已作废**：横方公式靠等号收尾定角色，会正常缩到与文字同大。
+  - **判档的回归台架是 `tools/gth_img_dom.js`（34 格，真 DOM，jsdom）**：      
+    `NODE_PATH=<托管 workspace>/node_modules node tools/gth_img_dom.js`，判错则退出码 1。      
+    22 格判档（三档 inline/formula/keep 都验）+ 12 格边界（站点原生 `.analysis`/`.stem`、空包裹、      
+    隔层领起词、连续两图、超大图、font 标签…）。**它替代了原先的 `tools/_probe_img*.js`**——      
+    那两个探针手搓 `{nodeType:3}` 假节点，绕开了 innerHTML 解析与 `<br>`/`<span>` 排版，      
+    而 `_probe_img2` 的 `want2got` 在 `role === 'unknown'` 时直接 `return want`，      
+    等于把判不出来的格子一律算对——是同义反复，不是判据。两者都恒绿，已删。
+  - 真页面尺寸：单行公式 intrinsic 高 124–168、两行 251，分式 110x150，行内小图 110x45/120x40，      
+    正文行高 28。**1.7em 那一档已废**（它把 247x144 压成 41x24，糊到看不清）。
+  - 被缩小的图一律 `cursor:zoom-in`、点开看原尺寸（`#gth-imgzoom`，点空白或 Esc 收回）——      
+    两档都算（`gth-img-inline` 与 `gth-img-formula`），那是「认错了也不把人堵死」的退路，别撤。      
+    裸的多行表格（650x226，既无领起词也无等号）仍会被形状压掉，这一格靠点开原图兜底。
+  - 判档要读 intrinsic 尺寸，而**图片加载不产生 childList 变化**、400ms 观察器叫不动它，      
+    所以另有 `load` 捕获段监听重扫一轮。`fitImgs` 带 `dataset.gthFit` 比对（无脑重写 class      
+    就是每轮喂一次属性变更）。
+- **`tools/gth_logic_test.js` 的 T70 曾经整块没跑过**（2026-10-09 晚发现，已修）。    
+  它写成 `(function t70() {…});`——命名函数表达式**后面漏了 `()`**，于是只是声明、从不执行；    
+  计数一直显示「827 条全过」，而图片判据那三十多条一条都没算进去。    
+  起因是验证时**只加了一条会红的用例却看到全绿**，靠「故意改错一个值」才确认它是死代码。    
+  **教训与那两轮相同：恒绿先怀疑工具本身。** 修好后立刻报出两条真问题：    
+  ① `imgNeighborText` 的方向写反（`<br>` 在后侧却往前找）；② 领起词把「如下图可知」当领起。
+  - **配套闸门**：`main()` 末尾加了**顶格声明体检**（T0）——主脚本是单文件 IIFE，      
+    正文里任何 `var`/`function` 都该缩进两格。顶格不是风格问题：`fnSource`/`varSource`      
+    靠 `'\n  function '`/`'\n  var '` 定位，顶格会让抽取器**找不到**它，      
+    而症状只报「找不到函数/变量」，把真因（少两格缩进）藏起来。      
+    `IMG_LEAD` 与 `imgIsLead` 都这么丢过一次，加了这条才当场暴露。
+  - `sliceToStatementEnd` 现在会跳过正则字面量与字符串：正则里有 `( ) [ ] { } ;`，      
+    不跳过就把语句截在半路（带字符类与非捕获组的那几条曾因此抽不出来）。
+
+### 注入控件的视觉规格（三组 token，2026-10-08 定）
+
+合并那一轮顺手收掉了「同一个动作两套外壳」：解析页小条上的「整理本题」是 32px 灰边白底、  
+笔记浮窗里同一颗是 24px 琥珀边白底；再加上解析页那一排自身的三套规格（一颗 ghost + 四颗白底灰边 + 一颗琥珀胶囊），  
+同屏能看出四种语言——用户 2026-10-08 指的就是这个。现在只留三组：
+
+- **浮层控件**（`.gth-ztop` 那一排、划线工具条 `#gth-hlbar` 里的按钮）：无壳文字按钮，    
+  `height:28px;border-radius:6px;font-size:12px`，底色 `rgba(255,255,255,.82)` + 极淡边 `rgba(15,23,42,.06)`。    
+  **那层底不能去掉**：它浮在题干表格上方，全透明就叠在一起（理由与 `.gth-ztop` 原来那条白底相同）。    
+  容器自己不压白带——一整条 `background:#fff` 浮在题干上就是用户说的「不自然」。
+- **面板内控件**（助手视图、题本、重练报告里坐在站点白内容列上的按钮）：`.gth-btn` 白底灰边、    
+  圆角跟 `--gth-ctl-r`（8px）、高 38（`.sm` 32）。它们本来就坐在白列上，不必跟着变透明。
+- **密集小控件**（逐题小条 `.gth-qbar-btn`、徽标 `.gth-badge`、状态标签 `.gth-abar-tag`）：高 24–28、    
+  圆角 6 或 999，**状态靠文字色承担**（「未收录」=琥珀字），不给它单独套壳。
+
+圆角只有三档：`6`（密集与浮层）/ `8`（面板、卡片、输入框）/ `999`（真胶囊：chip、badge、tag）。  
+高度只有四档：`24 / 28 / 32 / 38`；唯一的例外是答题页那颗暂停键（`30px`，照站点「交卷」键抄，见上一节）。  
+**判据锁形状不锁色值**：`.gth-ztop` 不压白带、每项自带一层可读底、六项同一套外壳——这三条在 `T64` 里。
+
+- **计时暂停那颗键的几何是照站点原生「交卷」键抄的，不自己定尺寸**：实测    
+  `gongan.min.ebe4763b.css` 里 `.gongan2-header .content .nav .operation-dati .jiaojuan a`    
+  = `height:30px;line-height:30px;padding:0 30px;border-radius:5px;background:#f97217`，    
+  头部底色 `#2178db`、高 60px，`.remain-time a` 是 16px。两态要一眼分得开：未暂停=白底蓝字，    
+  已暂停=琥珀 `#f59e0b`。判据只守「那三条几何还在」与「两条 background 彼此不同」，不锁色值。
+- 那颗键的键面**只有图标，一个字都没有**（未暂停 = Lucide `pause`，已暂停 = Lucide `play`），说明性文字一律进    
+  `title`（`已冻结，可以放心离开` / `点这里冻结计时`，后面接 `取页… · 计时器N台 · 阀门N/M · 已用 HH:MM:SS`）。    
+  **界面上不存在「不可暂停」这一档**：停不住就把键摘掉，原因写进宿主的 `title`（见上面那条）。    
+  键面上只有两态，判据也只锁两态各挂哪个图标。**这是措辞口径不是缺陷，所以不进判据**——    
+  以后改文案不该让判据红（但把「不可暂停」写回来会让那条 `miss` 判据红，它是行为口径不是措辞）。
 
 ## 数据与发布
 
-存储顶层键与各字段语义是冻结的契约：`gongan_tiku_helper_<ctx>`，允许**只增字段、只增映射**，
-判据是「旧数据缺这个字段时降级成什么」当场说得清（现例：`mockQs[].module`→未分类、
+存储顶层键与各字段语义是冻结的契约：`gongan_tiku_helper_<ctx>`，允许**只增字段、只增映射**，  
+判据是「旧数据缺这个字段时降级成什么」当场说得清（现例：`mockQs[].module`→未分类、  
 `practiced`→视为未重练）。细节与选型见 `docs/adr/0004`、`docs/adr/0001`。
 
-**版本号（脚本头 `@version`）只在用户下令「这一份交付出去 / 推到云端」时才动**。
+**版本号（脚本头 `@version`）只在用户下令「这一份交付出去 / 推到云端」时才动**。  
 平时每一轮迭代——**包括修缺陷——版本号一字不改**，改动只写进提交信息。动的时候按这个次序：
 
 - 默认只动第三位（`x.y.Z`）：缺陷修复、清理、界面落差修正都走这里
-- 第二位（`x.Y.0`）与第一位：**没有用户明确指示不许动**。哪怕这一轮按分类该算新增能力（新增能力
+- 第二位（`x.Y.0`）与第一位：**没有用户明确指示不许动**。哪怕这一轮按分类该算新增能力（新增能力    
   本该走第二位），也只能先问；用户说算清理，就按清理记
 - 行为等价的改动——简化、去重、注释、判据与工具改动——在任何情况下都不递增
 
-仓库版本领先或落后商店版本都不是我要纠正的状态：8111 停在哪个版本、什么时候上架、要不要递增号，
+仓库版本领先或落后商店版本都不是我要纠正的状态：8111 停在哪个版本、什么时候上架、要不要递增号，  
 全是用户的发布决定。
 
 ## git
 
-在当前分支上按路径逐个 `git add`（`git add -A` / `git add .` 会连带别人未完成的改动）。
-开提交前先 `git status` 看清索引与磁盘是否一致。
+在当前分支上按路径逐个 `git add`（`git add -A` / `git add .` 会连带别人未完成的改动）。  
+开提交前先 `git status` 看清索引与磁盘是否一致。  
 推送、开 PR、force 操作一律单独取得授权。
 
-**本仓库的工作树一律 CRLF，别"顺手改回 LF"。** 本机是 Windows 版 git 的默认配置
-（`core.autocrlf=true`，写在 `C:/Program Files/Git/etc/gitconfig`）：`git add` 把 CRLF 归一成 LF
-存进对象库，`git checkout` 再还原成 CRLF 写回磁盘——所以磁盘上是 CRLF 时两边始终一致，
-`git status` 不报变化（现例：对象库里的脚本 4543 行 CR=0，工作树则是每行一个 `\r`）。
-工作树若留 LF，下一次 `git checkout` / `git restore` / `git stash pop` 会把整份文件逐行重写，
-而 git 一声不响，等你做逐行比对时满屏都是假差异——10-03 那轮机械 diff 就是这么白跑一次的
-（当时的原话：「报的差异全是 CRLF/LF 假信号」）。另一个理由：商店 8111 那份本身就是 CRLF，
-拿仓库与商店版比对时同端换行符才比得动。新增文件也按 CRLF 存。
-（三件判据工具实测扛得住 CRLF：同一份脚本转成 CRLF 后判据仍全过、启动顺序仍判定绿。）
-一条会吓到你的现象：把整批文件一次性转成 CRLF 后，`git status` 会把它们**全报成已修改**，
+**本仓库的工作树一律 CRLF，别"顺手改回 LF"。** 本机是 Windows 版 git 的默认配置  
+（`core.autocrlf=true`，写在 `C:/Program Files/Git/etc/gitconfig`）：`git add` 把 CRLF 归一成 LF  
+存进对象库，`git checkout` 再还原成 CRLF 写回磁盘——所以磁盘上是 CRLF 时两边始终一致，  
+`git status` 不报变化（现例：对象库里的脚本 4543 行 CR=0，工作树则是每行一个 `\r`）。  
+工作树若留 LF，下一次 `git checkout` / `git restore` / `git stash pop` 会把整份文件逐行重写，  
+而 git 一声不响，等你做逐行比对时满屏都是假差异——10-03 那轮机械 diff 就是这么白跑一次的  
+（当时的原话：「报的差异全是 CRLF/LF 假信号」）。另一个理由：商店 8111 那份本身就是 CRLF，  
+拿仓库与商店版比对时同端换行符才比得动。新增文件也按 CRLF 存。  
+（三件判据工具实测扛得住 CRLF：同一份脚本转成 CRLF 后判据仍全过、启动顺序仍判定绿。）  
+一条会吓到你的现象：把整批文件一次性转成 CRLF 后，`git status` 会把它们**全报成已修改**，  
 但 `git add` 之后索引与 HEAD 一字不差、状态归零——那只是 stat 缓存，不是内容差异。

@@ -115,7 +115,7 @@ module.exports = { find: function (file) { return report(file, true); } };
 
 if (require.main === module) {
   const files = process.argv.slice(2).length ? process.argv.slice(2)
-    : ['gongan-wrong-questions-helper.user.js'];
+    : ['shangancun-exam-helper.user.js'];
   let total = 0;
   files.forEach(function (f) { total += report(f).length; });
   console.log(total ? '\n判定：红——有 ' + total + ' 处使用先于赋值' : '\n判定：绿');

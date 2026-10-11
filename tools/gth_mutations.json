@@ -1,0 +1,506 @@
+[
+  {
+    "name": "M1 摊开题本不再自动补题面",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "autoFillFaces(pageIds);",
+    "to": ""
+  },
+  {
+    "name": "M2a 题本空态不触发自动核对",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "跑完自己摊开。</div></div>');\n      autoReconcile();",
+    "to": "跑完自己摊开。</div></div>');"
+  },
+  {
+    "name": "M2b 摊开错题页不触发自动核对",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "refreshBadges();\n    autoReconcile();",
+    "to": "refreshBadges();"
+  },
+  {
+    "name": "M3 补过的题不记账（自动补齐变死循环）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "faceTried[String(id)] = 1;",
+    "to": ""
+  },
+  {
+    "name": "M4 解析展开行退回旧的那颗按钮类名",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "class=\"gth-btext\" data-act=\"ana\"",
+    "to": "class=\"gthq-ana-t\" data-act=\"ana\""
+  },
+  {
+    "name": "M5 题本头部不刷答错次数与掌握状态",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "refreshBadges();\n    renderBookSides();",
+    "to": "renderBookSides();"
+  },
+  {
+    "name": "M6 题本卡片退回「你的答案」那一行",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "circle: 1,",
+    "to": "circle: 1, mine: '',"
+  },
+  {
+    "name": "M7 在题本里点「笔记」又把题本关掉",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "if (viewOn) setView(false);\n    var id = String(item.id);",
+    "to": "if (viewOn) setView(false);\n    if (bookViewOn) setBookView(false);\n    var id = String(item.id);"
+  },
+  {
+    "name": "M8 题本卡片的外框与圆角没压掉",
+    "file": "shangancun-exam-helper.user.js",
+    "from": ".gth-qcard{background:#fff;border:none;",
+    "to": ".gth-qcard{background:#fff;"
+  },
+  {
+    "name": "M9 那行小条允许重复绑定",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "if (!bar || bar.dataset.gthBind) return;\n    bar.dataset.gthBind = '1';",
+    "to": "if (!bar) return;"
+  },
+  {
+    "name": "M10 当前这一页不排队首",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "return head.concat(gaps.filter(function (k) { return !taken[k]; })).slice(0, FACE_CAP);",
+    "to": "return gaps.slice(0, FACE_CAP);"
+  },
+  {
+    "name": "M11 那条线排到解析正文之前（顺序反了）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "      (ana ? '<div class=\"gthq-analysis\"' + (o.anaToggle ? ' hidden' : '') + '><b>解析</b><div>' +\n        wakeImgs(ana) + '</div></div>' : '') +\n      (ana && o.anaToggle ?\n        '<div class=\"gth-bline\"><div class=\"ln\"></div><div class=\"gth-btext\" data-act=\"ana\">' +\n        '<span class=\"t-open\">展开</span><span class=\"t-close\">收起</span>查看解析</div></div>' : '') +",
+    "to": "      (ana && o.anaToggle ?\n        '<div class=\"gth-bline\"><div class=\"ln\"></div><div class=\"gth-btext\" data-act=\"ana\">' +\n        '<span class=\"t-open\">展开</span><span class=\"t-close\">收起</span>查看解析</div></div>' : '') +\n      (ana ? '<div class=\"gthq-analysis\"' + (o.anaToggle ? ' hidden' : '') + '><b>解析</b><div>' +\n        wakeImgs(ana) + '</div></div>' : '') +"
+  },
+  {
+    "name": "M12 题号方块自己定尺寸",
+    "file": "shangancun-exam-helper.user.js",
+    "from": ".gth-seq-box{width:25px;height:25px",
+    "to": ".gth-seq-box{width:28px;height:28px"
+  },
+  {
+    "name": "M13 选项圆圈色值自定",
+    "file": "shangancun-exam-helper.user.js",
+    "from": ".gth-circle.right{border:5px solid #0c0}",
+    "to": ".gth-circle.right{border:5px solid #16a34a}"
+  },
+  {
+    "name": "M14 三角不会翻面",
+    "file": "shangancun-exam-helper.user.js",
+    "from": ".gth-btext.on:after{border-top:none;border-bottom:10px solid #8c8c8c}",
+    "to": ".gth-btext.on:after{border-top:10px solid #8c8c8c}"
+  },
+  {
+    "name": "M15 自动核对失败后可以无限重试",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "if (reconciling || reconcileTried || reconciled()) return;\n    reconcileTried = true;",
+    "to": "if (reconciling || reconciled()) return;"
+  },
+  {
+    "name": "M16 题本空态又摆一颗「与站点核对」按钮",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "'<div>补充题本只收站点错题本与收藏夹里<b>没有</b>的题——正在与站点核对这一批，跑完自己摊开。</div></div>');",
+    "to": "'<div>先点一下</div><button data-act=\"check\">与站点核对</button></div>');"
+  },
+  {
+    "name": "M17 题本头部改成另一套长相（不复用错题页那行）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "return '<div class=\"gth-qbar\" data-id=\"'",
+    "to": "return '<div class=\"gth-book-h\" data-id=\"'"
+  },
+  {
+    "name": "M18 题本与错题页两路绑定退回各写一遍",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "bindQbar(bar, function () { return itemsById[item.id]; });",
+    "to": "void bar;"
+  },
+  {
+    "name": "R1 当前题那一格排到对错色之前（看不出此刻在哪一格）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    '.gthq-cell.done i,.gthq-cell.right i{background:#2178db;border-color:#2178db;color:#fff}',\n    '.gthq-cell.bad i{background:#d77e46;border-color:#d77e46;color:#fff}',\n    '.gthq-cell.miss i{background:#f2f2f2;border-color:#cfcfcf;color:#9a9a9a}',\n    // 当前题那一格要压过对错色，所以排在它们后面\n    '.gthq-cell:hover i,.gthq-cell.cur i{background:#f97217;border-color:#f97217;color:#fff}',",
+    "to": "    '.gthq-cell:hover i,.gthq-cell.cur i{background:#f97217;border-color:#f97217;color:#fff}',\n    '.gthq-cell.done i,.gthq-cell.right i{background:#2178db;border-color:#2178db;color:#fff}',\n    '.gthq-cell.bad i{background:#d77e46;border-color:#d77e46;color:#fff}',\n    '.gthq-cell.miss i{background:#f2f2f2;border-color:#cfcfcf;color:#9a9a9a}',"
+  },
+  {
+    "name": "R2 复盘态不看当前题",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "  function reportHtml() {\n    var q = quiz.list[quiz.idx];",
+    "to": "  function reportHtml() {\n    var q = quiz.list[0];"
+  },
+  {
+    "name": "R3 下一题不走那份导航序列（只看错题成假的）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    var seq = navIdxs(), at = seq.indexOf(quiz.idx);",
+    "to": "    var seq = quiz.list.map(function (q, i) { return i; }), at = seq.indexOf(quiz.idx);"
+  },
+  {
+    "name": "R4 F5 不拦默认行为",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "if (e.key === 'F4' || e.key === 'F5') { e.preventDefault(); stepIdx",
+    "to": "if (e.key === 'F4' || e.key === 'F5') { stepIdx"
+  },
+  {
+    "name": "R6 暂停期间时钟照走",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    if (quiz.paused) return;\n    quiz.runMs += dt;",
+    "to": "    quiz.runMs += dt;"
+  },
+  {
+    "name": "R7 到点不自动交卷",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    if (quiz.limitSec && quiz.runMs >= quiz.limitSec * 1000) submitQuiz(true);",
+    "to": "    if (quiz.limitSec && quiz.runMs >= quiz.limitSec * 1000) quiz.paused = true;"
+  },
+  {
+    "name": "R8 自动交卷也弹确认框",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    if (!auto && un > 0 && !confirm(",
+    "to": "    if (un > 0 && !confirm("
+  },
+  {
+    "name": "R9 选一个选项就整屏重写",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    paintChoices();\n    paintCells();",
+    "to": "    renderQuiz();"
+  },
+  {
+    "name": "R10 「重练这套」那一路不传限时",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "      startQuiz(picked, h.desc, true, null, minLimit());",
+    "to": "      startQuiz(picked, h.desc, true);"
+  },
+  {
+    "name": "R11 复盘卡片里的笔记区没接上",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    bindNoteAreas(quizEl);\n\n    var cb = $('[data-hls]', quizEl);",
+    "to": "    var cb = $('[data-hls]', quizEl);"
+  },
+  {
+    "name": "R12 那颗「标记」画出来没接线",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "      if (mk) mk.addEventListener('click', function () { toggleMark(q.id); });",
+    "to": "      void mk;"
+  },
+  {
+    "name": "R13 标过的格子不画红角",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "      (quiz.marked[quiz.list[i].id] ? ' stressed' : '') +",
+    "to": "      '' +"
+  },
+  {
+    "name": "R14 交卷键自己定尺寸",
+    "file": "shangancun-exam-helper.user.js",
+    "from": ".gthq-btn{height:30px;line-height:30px;padding:0 30px;border-radius:5px;",
+    "to": ".gthq-btn{height:34px;line-height:34px;padding:0 14px;border-radius:8px;"
+  },
+  {
+    "name": "R15 答题卡栏宽自定",
+    "file": "shangancun-exam-helper.user.js",
+    "from": ".gthq-sheet-col{width:230px;",
+    "to": ".gthq-sheet-col{width:260px;"
+  },
+  {
+    "name": "R16 「只看错题」退回只藏不重排",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "      quiz.onlyWrong = ow.checked;\n      goIdx(quiz.idx);",
+    "to": "      quiz.onlyWrong = ow.checked;\n      $$('.gth-qcard', quizEl).forEach(function (el) { el.hidden = ow.checked; });"
+  },
+  {
+    "name": "R17 头部退回灰白工具条",
+    "file": "shangancun-exam-helper.user.js",
+    "from": ".gthq-header{background:#2178db;",
+    "to": ".gthq-header{background:#f8fafc;"
+  },
+  {
+    "name": "R18 答题态把「题目ID」那一行写回来",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "      '<div class=\"gthq-kind\">（' + (multi ? '多选' : '单选') + '）</div>' +",
+    "to": "      '<div class=\"gthq-meta\">题目ID ' + esc(q.id) + '</div>' +"
+  },
+  {
+    "name": "R19 公共卡片不再有题型那个槽位",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "        (o.kind ? '（' + esc(o.kind) + '）' : '') +",
+    "to": "        '' +"
+  },
+  {
+    "name": "R20 复盘态没接那份展开绑定",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    bindAnaToggle(quizEl);",
+    "to": "    void 0;"
+  },
+  {
+    "name": "R21 复盘选项退回整行上色加后缀",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "      return '<div class=\"gth-opt-plain\">' + esc(x.label) + '. ' + wakeImgs(x.content || '') + '</div>';",
+    "to": "      return '<div' + (isRight ? ' style=\"color:#16a34a\"' : '') + '>' + esc(x.label) + '. ' + wakeImgs(x.content || '') + (isRight ? '（正确）' : '') + '</div>';"
+  },
+  {
+    "name": "R22 重练开着时观察器照跑",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    if (!quizEl.hidden) return;\n    prunePageRefs();",
+    "to": "    prunePageRefs();"
+  },
+  {
+    "name": "R23 时钟退回每秒 innerHTML 重写",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    if (el.firstChild.nodeValue !== txt) el.firstChild.nodeValue = txt;",
+    "to": "    el.innerHTML = txt;"
+  },
+  {
+    "name": "R24 勾了只看错题答题卡还画整张",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "      '<ul class=\"gthq-cells\">' + seq.map(function (i) {",
+    "to": "      '<ul class=\"gthq-cells\">' + quiz.list.map(function (q, i) {"
+  },
+  {
+    "name": "R25 没有错题时不收回勾选也不说一句",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "      quiz.onlyWrong = false;\n      quiz.idx = 0;\n      toast('这一卷没有答错的题');",
+    "to": "      quiz.idx = 0;"
+  },
+  {
+    "name": "I1 门槛设成 0（任何图都算嵌在文字里）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "  var IMG_INLINE_TEXT = 8;",
+    "to": "  var IMG_INLINE_TEXT = 0;"
+  },
+  {
+    "name": "I2 门槛去掉（紧邻任何文字都算行内，「如图」也会压小表）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "        String(node.nodeValue || '').replace(/\\s+/g, '').length >= IMG_INLINE_TEXT;",
+    "to": "        String(node.nodeValue || '').replace(/\\s+/g, '').length > 0;"
+  },
+  {
+    "name": "I3 公式档整条删掉（解析里那枚两行公式回到 11 行高）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    'img.gth-img-formula{max-height:4em;max-width:340px;width:auto;height:auto;cursor:zoom-in}',\n",
+    "to": ""
+  },
+  {
+    "name": "I4 扫图不比对就每轮重写 class",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "      if (el.dataset && el.dataset.gthFit === want) return;",
+    "to": ""
+  },
+  {
+    "name": "I5 站点渲染的那屏没人管",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    fitImgs(document.body);\n",
+    "to": ""
+  },
+  {
+    "name": "I6 重练那一屏的图没人管",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    fitImgs(quizEl);\n",
+    "to": ""
+  },
+  {
+    "name": "I7 公式上限写成死像素（不跟字号走）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "img.gth-img-formula{max-height:4em;max-width:340px",
+    "to": "img.gth-img-formula{max-height:56px;max-width:340px"
+  },
+  {
+    "name": "I8 解析容器那一路去掉（那枚两行公式又没人管了）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    if (el.closest(IMG_FORMULA_HOST)) return tall || strip;\n",
+    "to": ""
+  },
+  {
+    "name": "I9 细长条那道筛子去掉（解析里的饼图也被压成一行高）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    var strip = el.naturalWidth >= el.naturalHeight * IMG_FORMULA_RATIO;",
+    "to": "    var strip = true;"
+  },
+  {
+    "name": "I10 高宽比门槛调到 0（等于不筛）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "  var IMG_FORMULA_RATIO = 2.2;",
+    "to": "  var IMG_FORMULA_RATIO = 0;"
+  },
+  {
+    "name": "I11 没加载完也照判（intrinsic 尺寸是 0，公式永远认不出）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    if (!el.naturalHeight) return false;\n",
+    "to": ""
+  },
+  {
+    "name": "I12 晚加载的图没人重扫（load 不产生 childList，观察器叫不动）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    if (e.target && e.target.tagName === 'IMG') fitImgsSoon();\n",
+    "to": ""
+  },
+  {
+    "name": "I13 压小的公式图没绑「点开看原图」",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "      openImgZoom(t.getAttribute('src') || t.getAttribute('data-src') || '');\n",
+    "to": ""
+  },
+  {
+    "name": "I14 看原图的浮层点空白收不回",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "      imgZoomEl.addEventListener('click', closeImgZoom);\n",
+    "to": ""
+  },
+  {
+    "name": "I15 把材料与题干也放进解析那一档（题目本身的图被压小）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "  var IMG_FORMULA_HOST = '.gthq-analysis,.analysis,.gth-note-text,.gth-aside,.gth-apanel';",
+    "to": "  var IMG_FORMULA_HOST = '.gthq-analysis,.analysis,.gth-note-text,.gth-aside,.gth-apanel,.gthq-material,.gthq-stem';"
+  },
+  {
+    "name": "R26 暂停键回到只有限时那一档才出现",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "        '<button class=\"gthq-btn pause\" id=\"gth-pause\" type=\"button\" title=\"' +\n        (quiz.paused ? '点这里恢复计时'",
+    "to": "        (quiz.limitSec ? '<button class=\"gthq-btn pause\" id=\"gth-pause\" type=\"button\" title=\"' +\n        (quiz.paused ? '点这里恢复计时'"
+  },
+  {
+    "name": "R27 不记每题用时",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    if (cur) quiz.spent[cur.id] = (quiz.spent[cur.id] || 0) + dt;",
+    "to": ""
+  },
+  {
+    "name": "R28 交卷后头部只报得分",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "      '　正确率 ' + Math.round(right / quiz.list.length * 100) + '%' +\n      '　错题 ' + wrong + '　未做 ' + miss + '　用时 ' + fmtTime(quiz.runMs);",
+    "to": "      '　用时 ' + fmtTime(quiz.runMs);"
+  },
+  {
+    "name": "R29 内容列又限死 770px 居中",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    '.gthq-content{flex:1;min-width:0;padding:0 24px 0 20px;",
+    "to": "    '.gthq-content{flex:1;min-width:0;max-width:770px;padding:0 24px 0 20px;"
+  },
+  {
+    "name": "R30 每题用时不足一秒也显示 00:00",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "        time: spent >= 1000 ? icon('clock') + fmtTime(spent) : '',",
+    "to": "        time: icon('clock') + fmtTime(spent || 0),"
+  },
+  {
+    "name": "U1 那颗键静默删数据（不过确认）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "      if (!confirm('将删掉 ' + n + ' 项本机不再需要的记录' +",
+    "to": "      if (false && confirm('将删掉 ' + n + ' 项本机不再需要的记录' +"
+  },
+  {
+    "name": "U2 那颗键只清理不核对",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    reconcileWithSite(this);\n  });",
+    "to": "  });"
+  },
+  {
+    "name": "U3 没东西可删也弹一次空框",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    var f = upgradeScan(), n = f.keys.length + f.old.length + f.snaps.length;\n    if (n) {",
+    "to": "    var f = upgradeScan(), n = 1;\n    if (n) {"
+  },
+  {
+    "name": "U4 搜关键词前不剥标签",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    return (stripHtml(s.content) + stripHtml(s.analysis) + stripHtml(s.material))",
+    "to": "    return (String(s.content) + String(s.analysis) + String(s.material))"
+  },
+  {
+    "name": "U5 没输关键词也去逐题读题面",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "      return bookMatch(bookFacets(id)) && (!q || bookSearchHit(id, q));",
+    "to": "      return bookMatch(bookFacets(id)) && bookSearchHit(id, q);"
+  },
+  {
+    "name": "U6 筛到空了不给出口",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "        '<button class=\"gth-btn sm\" data-act=\"unfilter\">清空筛选</button></div>');",
+    "to": "        '</div>');"
+  },
+  {
+    "name": "U7 「清空筛选」恒亮",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    if (rb) rb.hidden = !bookNarrowed();",
+    "to": "    if (rb) rb.hidden = false;"
+  },
+  {
+    "name": "U8 搜索框不节流",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "  if (bookSearchEl) bookSearchEl.addEventListener('input', debounce(function () {",
+    "to": "  if (bookSearchEl) bookSearchEl.addEventListener('input', (function () {"
+  },
+  {
+    "name": "U9 模块下拉没人填",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    renderBookFilterMods(ids);\n    var q = bookFilter.q.trim().toLowerCase();",
+    "to": "    var q = bookFilter.q.trim().toLowerCase();"
+  },
+  {
+    "name": "U10 按祖先的文字判行内（隔层正文也算进来）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "      return !!node && node.nodeType === 3 &&\n        String(node.nodeValue || '')",
+    "to": "      return !!node && (node.nodeType === 3 || node.nodeType === 1) &&\n        String(node.textContent || node.nodeValue || '')"
+  },
+  {
+    "name": "U11 只看前面不看后面",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    return words(el.previousSibling) || words(el.nextSibling);",
+    "to": "    return words(el.previousSibling);"
+  },
+  {
+    "name": "U12 置灰的界挪回第二趟之后（两处一起挪）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": ["    }).then(function (zyList) {", "      renderBookList();\n    })).catch(function (e) {"],
+    "to": ["    })).then(function (zyList) {", "      renderBookList();\n    }).catch(function (e) {"]
+  },
+  {
+    "name": "I16 选项里竖着的分式不认（1/16 那种图回到原尺寸）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    return tall && !!el.closest(IMG_FRACTION_HOST);",
+    "to": "    return false;"
+  },
+  {
+    "name": "I17 竖式判据去掉（分式那一档整个失效）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    var tall = el.naturalHeight > el.naturalWidth;",
+    "to": "    var tall = false;"
+  },
+  {
+    "name": "I18 题干与选项里的横图也算公式（统计表被压成一行高）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    return tall && !!el.closest(IMG_FRACTION_HOST);",
+    "to": "    return !!el.closest(IMG_FRACTION_HOST);"
+  },
+  {
+    "name": "W1 暂停那一路改回 else（真实用时又把暂停漏掉）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    if (paused && !noFreeze) rec.paused++;\n    tallySecond(rec, currentQid());",
+    "to": "    if (paused && !noFreeze) rec.paused++;\n    else tallySecond(rec, currentQid());"
+  },
+  {
+    "name": "W2 合计把 paused 再加一次（暂停的秒数双计）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    var n = r.lost || 0;",
+    "to": "    var n = (r.paused || 0) + (r.lost || 0);"
+  },
+  {
+    "name": "W3 认不出当前题的那一秒直接丢掉（不再落未归属）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    else r.lost = (r.lost || 0) + 1;",
+    "to": "    else r.lost = r.lost || 0;"
+  },
+  {
+    "name": "W4 复制没写成也说「复制成功」",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    toast(ok ? '复制成功' : '复制失败：浏览器没让脚本写剪贴板');",
+    "to": "    toast('复制成功');"
+  },
+  {
+    "name": "W5 某颗复制键退回裸 copyText（点了不弹提示）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "      var ok = copyWithToast(copyQuestion(it));",
+    "to": "      var ok = copyText(copyQuestion(it));"
+  },
+  {
+    "name": "W6 用时卡片点空白不收回",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    $$('.gth-qtime.on').forEach(function (b) { b.classList.remove('on'); });\n",
+    "to": ""
+  }
+]
