@@ -562,5 +562,23 @@
     "file": "shangancun-exam-helper.user.js",
     "from": "  var IMG_FORMULA_HOST = '.gthq-analysis,.analysis,.gth-note-text,.gth-aside,.gth-apanel';",
     "to": "  var IMG_FORMULA_HOST = '.gthq-analysis,.analysis,.gth-note-text,.gth-aside,.gth-apanel,.gthq-material';"
+  },
+  {
+    "name": "I28 软收尾那一支整条删掉（「平均数为 X 亿」那种式子认不出）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    if (IMG_OP_SOFT.test(before) && after) return 'math';\n",
+    "to": ""
+  },
+  {
+    "name": "I29 硬运算符也要求另一侧有字（段末的「…=」式子退回原样）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    if (IMG_OP_HARD.test(before)) return 'math';",
+    "to": "    if (IMG_OP_HARD.test(before) && after) return 'math';"
+  },
+  {
+    "name": "I30 软收尾不再要求另一侧有字（图形推理那块 628x153 被压成 80x20）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    if (IMG_OP_SOFT.test(before) && after) return 'math';",
+    "to": "    if (IMG_OP_SOFT.test(before)) return 'math';"
   }
 ]

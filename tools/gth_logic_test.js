@@ -90,7 +90,7 @@ const CONSTS = ['SUBJ_ZY', 'SUBJ_XC', 'SUBJECT_NAME', 'DAY_RANGES', 'SITE_LIST_C
   'notesFilter', 'notesSearchKey', 'examPointModule', 'SRC_LIST_LABEL', 'BOOK_PER_PAGE',
   'bookShownIds', 'bookPage', 'faceTried', 'IMG_INLINE_TEXT', 'IMG_BOTH_SIDES',
   'IMG_2LINE_RATIO', 'IMG_2LINE_TALL', 'IMG_2LINE_MID', 'IMG_2LINE_MID_RATIO',
-  'IMG_LEAD', 'IMG_OP_TAIL', 'IMG_CONT', 'IMG_MATERIAL_HOST', 'IMG_TEXT_HOST', 'bookFilter',
+  'IMG_LEAD', 'IMG_OP_HARD', 'IMG_OP_SOFT', 'IMG_CONT', 'IMG_MATERIAL_HOST', 'IMG_TEXT_HOST', 'bookFilter',
   'IMG_FORMULA_HOST', 'IMG_FRACTION_HOST', 'IMG_FORMULA_RATIO'];
 
 const FNS = ['ansKey', 'serverErrCount', 'errCountOf', 'masteredLabel', 'isMastered',
@@ -194,7 +194,7 @@ const EXPOSED = [
   'qtimeExamId', 'qtimeAll', 'qtimeSession', 'qtimeSec', 'qtimeText',
   'qtimeOrder', 'qtimeRows', 'recapSig', 'qtimeBandHtml', 'imgNeighborText', 'imgTextRole',
   'imgIsLead', 'imgLeadNearby', 'imgSizeRole', 'imgFitRole', 'IMG_INLINE_TEXT', 'IMG_BOTH_SIDES',
-  'IMG_2LINE_RATIO', 'IMG_2LINE_TALL', 'IMG_2LINE_MID', 'IMG_2LINE_MID_RATIO', 'IMG_LEAD', 'IMG_OP_TAIL', 'IMG_CONT',
+  'IMG_2LINE_RATIO', 'IMG_2LINE_TALL', 'IMG_2LINE_MID', 'IMG_2LINE_MID_RATIO', 'IMG_LEAD', 'IMG_OP_HARD', 'IMG_OP_SOFT', 'IMG_CONT',
   'IMG_MATERIAL_HOST', 'IMG_TEXT_HOST', 'IMG_FORMULA_HOST', 'IMG_FRACTION_HOST', 'IMG_FORMULA_RATIO',
   'tallySecond', 'recSum', 'copyWithToast',
   'getQtimeErr: function () { return qtimeErr; }',
@@ -2244,8 +2244,16 @@ async function t67() {
      !m.imgIsLead('如图所示，边长为50米的等边三角形，其中'),
     'T70 尾锚一条就挡掉两种情形：「如下图可知」那类**引述**（在说图不是在引出图），' +
     '以及段首那句「如图所示，」——它只该管自己后面那枚图，不该管到段中（用户 10-11 那道题的第一枚）');
-  ok(m.IMG_OP_TAIL.test('平均每个月的同比增量=') && m.IMG_OP_TAIL.test('增长率为') &&
-     !m.IMG_OP_TAIL.test('如图'), 'T70 运算符结尾认「=为：」，不认「如图」那种领起');
+  ok(m.IMG_OP_HARD.test('平均每个月的同比增量=') && m.IMG_OP_HARD.test('增长率×') &&
+     !m.IMG_OP_HARD.test('如图') && !m.IMG_OP_HARD.test('分类正确的一项是：'),
+    'T70 硬运算符（=×÷+-）收尾单独就定式子：中文散文里不会出现这几枚，冒号与「是/为」不在这一支');
+  ok(m.IMG_OP_SOFT.test('增长率为') && m.IMG_OP_SOFT.test('分类正确的一项是：') &&
+     !m.IMG_OP_SOFT.test('增长率='),
+    'T70 软收尾（冒号与「是/为/约」）本身不足以定式子——它天天用于引出一块内容，见下面两条全程断言');
+  eq(m.imgTextRole(pic(0, 0, STEM, txt('把下面的六个图形分为两类,使每一类图形都有各自的共同特征或规律,分类正确的一项是：'), null)), null,
+    'T70 段末冒号、后面什么都没有 → 这一层不表态：用户 10-11 报的误杀就是它把 628x153 的图形推理块压成 80x20');
+  eq(m.imgTextRole(pic(0, 0, STEM, txt('平均每个月的同比增量为'), txt('亿'))), 'math',
+    'T70 软收尾 + 另一侧真接着字 → 仍是式子（把软支整条删掉，这一格会掉进形状兜底判成原样）');
   ok(m.IMG_CONT.test('亿元，正确；') && m.IMG_CONT.test('，增长最快') &&
      m.IMG_CONT.test('倍。') && !m.IMG_CONT.test('如下图所示：'), 'T70 续写开头认单位与标点（「倍」是 10-11 那道题里的一枚）');
   ok(ANA.indexOf('.gthq-analysis') >= 0 && ANA.indexOf('.analysis') >= 0,

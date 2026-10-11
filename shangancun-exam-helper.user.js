@@ -699,8 +699,12 @@
   function imgIsLead(before) {
     return IMG_LEAD.test(before);
   }
-  // 运算符结尾：等号/冒号/「为」收尾，后面接的是式子
-  var IMG_OP_TAIL = /[=＝:：是为约×÷+\-]\s*$/;
+  // 运算符收尾分软硬两支。硬的那几枚中文散文里不会出现，单独就定式子；
+  // 软的那几枚（冒号、「是/为/约」）天天用于**引出一块内容**——「…分类正确的一项是：」
+  // 后面接的是一整张图形推理图（用户 10-11 报的误杀：628x153 被压成 80x20）。
+  // 所以软收尾必须另一侧也有字才算式子：式子是嵌在句子中间的，段末什么都不剩就不是。
+  var IMG_OP_HARD = /[=＝×÷+\-]\s*$/;
+  var IMG_OP_SOFT = /[:：是为约]\s*$/;
   // 续写开头：单位与标点开头，图后面那半句是接着这张式子说的
   var IMG_CONT = /^[\s]*(?:亿元|万元|元|倍|个|人|次|天|月|年|日|％|%|，|。|、|；|则|故|所以|因此|可见)/;
 
@@ -726,7 +730,8 @@
     var after = imgNeighborText(el, 1).replace(/\s+/g, '');
     if (!before && !after) return null;
     if (imgIsLead(before)) return 'figure';
-    if (IMG_OP_TAIL.test(before)) return 'math';
+    if (IMG_OP_HARD.test(before)) return 'math';
+    if (IMG_OP_SOFT.test(before) && after) return 'math';
     if (IMG_CONT.test(after)) return 'math';
     // 两边都顶着字，它在句子中间。够长的按式子算（分式两侧各有一截字）；
     // 两边都不长的多是句中一个数字或符号（图里就写着 360°、0℃ 那类）。

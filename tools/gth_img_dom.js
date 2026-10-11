@@ -40,7 +40,7 @@ function varOf(name) {
   }
 }
 const CONSTS = ['IMG_INLINE_TEXT', 'IMG_BOTH_SIDES', 'IMG_2LINE_RATIO', 'IMG_2LINE_TALL', 'IMG_2LINE_MID',
-  'IMG_2LINE_MID_RATIO', 'IMG_LEAD', 'IMG_OP_TAIL', 'IMG_CONT',
+  'IMG_2LINE_MID_RATIO', 'IMG_LEAD', 'IMG_OP_HARD', 'IMG_OP_SOFT', 'IMG_CONT',
   'IMG_MATERIAL_HOST', 'IMG_TEXT_HOST', 'IMG_FORMULA_HOST', 'IMG_FRACTION_HOST', 'IMG_FORMULA_RATIO'];
 const FNS = ["imgIsLead", "imgNeighborText", "imgTextRole", "imgLeadNearby", "imgSizeRole", "imgFitRole"];
 const impl = new Function([
@@ -107,6 +107,12 @@ const CASES = [
     '<div class="gth-clab">C.</div><div class="gth-cval"><img></div></div></div>', 95, 142, '2line', '10-11 那道题的选项 C，实测 95x142'],
   ['选项·横图', 'qopt', '<div class="gth-opt-plain">B. <p><img></p></div>', 650, 200, 'keep', '选项里的统计表原样'],
   ['选项·纯文字', 'qopt', '<div class="gth-opt-plain">C. 2015年</div>', 0, 0, 'keep', '无图'],
+
+  // —— 2026-10-11 用户报的第二个方向：这次是**误杀**，不是没缩 ——
+  // 图形推理那一类题干以「…分类正确的一项是：」收尾，整张六图块（实测 628x153）跟在后面。
+  // 冒号与「是/为/约」是软收尾：中文散文用它引出一块内容，跟硬运算符平起平坐就把这枚压成 80x20。
+  ['题干·段末冒号引出图块', 'stem', '<p>把下面的六个图形分为两类,使每一类图形都有各自的共同特征或规律,分类正确的一项是：<img></p>', 628, 153, 'keep', '软收尾 + 后面无字 → 交给形状'],
+  ['题干·软收尾接式子', 'stem', '<p>平均每个月的同比增量为<img>亿</p>', 1221, 251, '2line', '软收尾但另一侧真接着字 → 仍是式子'],
 
   // —— 反例：字数字槛（8/2）就是为这一格留的 ——
   // 「见 [统计图] 可知」把图形夹在两个字中间：放宽到各一个字，800x400 的表会被压成 78x39。
