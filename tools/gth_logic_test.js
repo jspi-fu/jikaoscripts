@@ -88,8 +88,9 @@ const CONSTS = ['SUBJ_ZY', 'SUBJ_XC', 'SUBJECT_NAME', 'DAY_RANGES', 'SITE_LIST_C
   'MOCK_CORRECT_KEYS', 'MOCK_ANALYSIS_KEYS', 'MOCK_SUBJECT_KEYS', 'MOCK_RESULT_KEYS',
   'MOCK_MODULE_KEYS', 'selectedModules', 'selectedMockModules', 'practiceSrcs',
   'notesFilter', 'notesSearchKey', 'examPointModule', 'SRC_LIST_LABEL', 'BOOK_PER_PAGE',
-  'bookShownIds', 'bookPage', 'faceTried', 'IMG_INLINE_TEXT', 'IMG_BOTH_SIDES', 'IMG_INLINE_MAX_H',
-  'IMG_LEAD_TAIL', 'IMG_LEAD', 'IMG_OP_TAIL', 'IMG_CONT', 'IMG_MATERIAL_HOST', 'IMG_TEXT_HOST', 'bookFilter',
+  'bookShownIds', 'bookPage', 'faceTried', 'IMG_INLINE_TEXT', 'IMG_BOTH_SIDES',
+  'IMG_2LINE_RATIO', 'IMG_2LINE_TALL', 'IMG_2LINE_MID', 'IMG_2LINE_MID_RATIO',
+  'IMG_LEAD', 'IMG_OP_TAIL', 'IMG_CONT', 'IMG_MATERIAL_HOST', 'IMG_TEXT_HOST', 'bookFilter',
   'IMG_FORMULA_HOST', 'IMG_FRACTION_HOST', 'IMG_FORMULA_RATIO'];
 
 const FNS = ['ansKey', 'serverErrCount', 'errCountOf', 'masteredLabel', 'isMastered',
@@ -119,7 +120,7 @@ const FNS = ['ansKey', 'serverErrCount', 'errCountOf', 'masteredLabel', 'isMaste
   'toggleAbarNote', 'renderBookSides', 'bookCardNode', 'bindBookPager', 'bookPageIds', 'bookPageTotal',
   'qtimeExamId', 'qtimeAll', 'qtimeSession', 'qtimeSec', 'qtimeText',
   'qtimeOrder', 'qtimeRows', 'recapSig', 'qtimeBandHtml', 'imgIsLead', 'imgNeighborText', 'imgTextRole',
-  'imgLeadNearby', 'imgSizeRole', 'imgFitRole', 'imgIsFormula',
+  'imgLeadNearby', 'imgSizeRole', 'imgFitRole',
   'tallySecond', 'recSum', 'copyWithToast'];
 
 const PRELUDE = [
@@ -192,8 +193,8 @@ const EXPOSED = [
   'getBookPage: function () { return bookPage; }',
   'qtimeExamId', 'qtimeAll', 'qtimeSession', 'qtimeSec', 'qtimeText',
   'qtimeOrder', 'qtimeRows', 'recapSig', 'qtimeBandHtml', 'imgNeighborText', 'imgTextRole',
-  'imgIsLead', 'imgLeadNearby', 'imgSizeRole', 'imgFitRole', 'imgIsFormula', 'IMG_INLINE_TEXT', 'IMG_BOTH_SIDES',
-  'IMG_INLINE_MAX_H', 'IMG_LEAD_TAIL', 'IMG_LEAD', 'IMG_OP_TAIL', 'IMG_CONT',
+  'imgIsLead', 'imgLeadNearby', 'imgSizeRole', 'imgFitRole', 'IMG_INLINE_TEXT', 'IMG_BOTH_SIDES',
+  'IMG_2LINE_RATIO', 'IMG_2LINE_TALL', 'IMG_2LINE_MID', 'IMG_2LINE_MID_RATIO', 'IMG_LEAD', 'IMG_OP_TAIL', 'IMG_CONT',
   'IMG_MATERIAL_HOST', 'IMG_TEXT_HOST', 'IMG_FORMULA_HOST', 'IMG_FRACTION_HOST', 'IMG_FORMULA_RATIO',
   'tallySecond', 'recSum', 'copyWithToast',
   'getQtimeErr: function () { return qtimeErr; }',
@@ -2101,12 +2102,15 @@ async function t67() {
   //    10-09 第三轮：宽度比当主判据这条走不通——竖着的柱状图（180x520）与横着的多行表格
   //    （650x226）都会被它压成一行高，而它们缩掉就没法看了。改成**文字语义定角色、形状只兜底**：
   //    公式是句子的一部分（等号后面、单位前面），图是句子指向的东西（如下图所示）。
-  //    这一块的无判据逐枚台架在 tools/gth_img_dom.js（真 DOM，19/19）。
+  //    10-11 那一轮把「缩到多少」从封顶改成定高、从「本来多高」改成「占几行」，
+  //    并把领起词整条锚到句尾——「如图所示，边长为50米…」那句在段首，却把同段后面
+  //    每一枚行内式子都判成了图（那一枚 293x62 就这么原样摆在 14px 正文中间）。
+  //    这一块的逐枚台架在 tools/gth_img_dom.js（真 DOM，28+14 格），它也在突变闸门里了。
   const m = build({});
   const src = blankLiterals.comments(lf(raw));
   const txt = (t) => ({ nodeType: 3, nodeValue: t });
   const tag = (name, t) => ({ nodeType: 1, nodeName: name, textContent: t == null ? '' : t });
-  // pic 造一枚够 imgIsFormula 走完全程的图：closest 认容器，parentElement 供 imgLeadNearby 往上找。
+  // pic 造一枚够 imgFitRole 走完全程的图：closest 认容器，parentElement 供 imgLeadNearby 往上找。
   const pic = (w, h, host, prev, next, prevBlock) => {
     const el = {
       nodeType: 1, nodeName: 'IMG', textContent: '',
@@ -2126,21 +2130,25 @@ async function t67() {
   const ANA = m.IMG_FORMULA_HOST, OPT = m.IMG_FRACTION_HOST, MAT = m.IMG_MATERIAL_HOST;
   const STEM = '.gthq-stem';   // 题干不在上面任何一份名单里（它走「只认竖式」那一档的宿主名）
 
-  // —— 文字语义这一层：imgTextRole 返回 formula / figure / null ——
+  // —— 第一问：文字语义只答「式子还是图」（缩到几行是第二问，别混在这里）——
   eq(m.imgTextRole(pic(0, 0, ANA, txt('如下图所示：'))), 'figure',
     'T70 「如下图所示：」领起的图保持原尺寸——几何上它可能又高又窄，但它是图不是式子');
   eq(m.imgTextRole(pic(0, 0, ANA, txt('如下表：'))), 'figure',
     'T70 「如下表：」同理，解析里的多行表格（650x226）不再被细长条筛子压成一行高');
-  eq(m.imgTextRole(pic(0, 0, ANA, txt('平均每个月的同比增量='))), 'formula',
+  eq(m.imgTextRole(pic(0, 0, ANA, txt('如图所示，边长为50米的等边三角形ABC是学校操场上的一块闲置区域，其中'), txt('，'))), 'math',
+    'T70 段首那句「如图所示」管不到段中：领起词必须贴在图前面，否则同段每一枚行内式子都被放成原样（用户 10-11 那道题的第一枚）');
+  eq(m.imgTextRole(pic(0, 0, ANA, txt('平均每个月的同比增量='))), 'math',
     'T70 等号收尾说明后面接的是式子');
-  eq(m.imgTextRole(pic(0, 0, ANA, txt('计算如下：'), txt('故答案选B。'))), 'formula',
+  eq(m.imgTextRole(pic(0, 0, ANA, txt('计算如下：'), txt('故答案选B。'))), 'math',
     'T70 冒号收尾 + 后半句续写，也是式子');
-  eq(m.imgTextRole(pic(0, 0, ANA, txt('增长率='), txt('，增长最快。'))), 'formula',
-    'T70 247x144 那一档横方公式：靠等号收尾定角色，不再靠宽高比（AGENTS 那条取舍作废）');
-  eq(m.imgTextRole(pic(0, 0, OPT, txt('8人参加演讲比赛，抽签决定参赛顺序，有'), txt('种情况，最多的是？'))), 'formula',
+  eq(m.imgTextRole(pic(0, 0, ANA, txt('增长率='), txt('，增长最快。'))), 'math',
+    'T70 247x144 那一档横方公式：靠等号收尾定角色，不靠宽高比');
+  eq(m.imgTextRole(pic(0, 0, OPT, txt('8人参加演讲比赛，抽签决定参赛顺序，有'), txt('种情况，最多的是？'))), 'math',
     'T70 两侧都顶着成句的话，它在句子中间，是分式');
-  eq(m.imgTextRole(pic(0, 0, ANA, txt('增长量=现期量-基期量，得'), txt('亿元。'))), 'formula',
+  eq(m.imgTextRole(pic(0, 0, ANA, txt('增长量=现期量-基期量，得'), txt('亿元。'))), 'math',
     'T70 单位开头（亿元）说明这句是接着式子说的');
+  eq(m.imgTextRole(pic(0, 0, ANA, txt('见'), txt('可知增长最快。'))), null,
+    'T70 两边字都不成句时这一层不表态：放宽到「各有一个字就算」会把 800x400 的统计表压成 78x39（10-11 实测对照过）');
   eq(m.imgTextRole(pic(0, 0, ANA, null, null)), null,
     'T70 前后都没有文字时这一层不表态，交给形状兜底');
   eq(m.imgTextRole(pic(0, 0, ANA, tag('BR', ''))), null,
@@ -2156,66 +2164,90 @@ async function t67() {
     'T70 反方向同理：<br> 在前侧也不挡住后面那段字');
   eq(m.imgNeighborText({}, -1), '', 'T70 没有兄弟时返回空串，不抛错');
 
-  // —— imgIsFormula 全程 ——
-  eq(m.imgIsFormula(pic(1221, 251, ANA, null, null)), true,
-    'T70 解析里独占一段的两行裸公式（真页面实测 1221x251）认得出——用户 10-09 报的第一枚，走形状兜底');
-  eq(m.imgIsFormula(pic(434, 165, ANA, null, null)), true,
-    'T70 解析里的竖式（434x165）同样走形状兜底');
-  eq(m.imgIsFormula(pic(110, 150, OPT, null, null)), true,
-    'T70 选项里竖着的分式（用户 10-09 第二张截图：整张选项就是一张 1/16 图）认得出');
-  eq(m.imgIsFormula(pic(650, 200, OPT, null, null)), false,
-    'T70 选项里横着的原样留着：那里放一张统计表是常事，只有竖着的才一定是分式');
-  eq(m.imgIsFormula(pic(650, 226, ANA, null, null, null)), true,
-    'T70 裸的多行表格仍会走形状压掉——这一格是已知的取舍，靠点开看原尺寸兜底（见 AGENTS）');
-  eq(m.imgIsFormula(pic(650, 226, ANA, null, null, txt('如下表：'))), false,
-    'T70 但只要上一段有领起词，就不压：多行表格与竖柱状图靠这一条躲开形状筛子');
-  eq(m.imgIsFormula(pic(180, 520, ANA, null, null, txt('如下图所示：'))), false,
-    'T70 解析里竖着的柱状图（180x520）不再被当成竖式压掉——上一段「如下图所示：」说了算');
-  eq(m.imgIsFormula(pic(1017, 153, MAT, null, null)), false,
-    'T70 材料里的图先于一切判据豁免：那是题目本身，一个像素都不许动');
-  eq(m.imgIsFormula(pic(0, 0, ANA, null, null)), false,
-    'T70 没加载完拿不到 intrinsic 尺寸，这一轮先不动它（load 事件会再扫一遍，见下面那条接线）');
-  eq(m.imgIsFormula({}), false, 'T70 连 closest 都没有时不抛错');
+  // —— 第二问：该缩的这枚占几行。三道门来自 10-11 那道题的 11 枚真图（从站点抓下来读的尺寸）：
+  //    单行式子 62–76 高（ratio 2.9–10）、分式 142 高（ratio 0.67–1.44）、两行宽式 251 高、
+  //    竖式 434x165（ratio 2.6，前两道门放行，第三道门收回来）——
+  //    已知代价：120–200 高而 ratio<3 的单行式子会被给到两行高，比一行大 19px。
+  eq(m.imgSizeRole(pic(293, 62, ANA)), '1line', 'T70 单行式子（DE⊥AB 那枚 293x62）与正文同大');
+  eq(m.imgSizeRole(pic(630, 64, ANA)), '1line', 'T70 宽的单行式子（∠ABC=ACB=60°，630x64）也还是一行');
+  eq(m.imgSizeRole(pic(95, 142, ANA)), '2line', 'T70 分式（选项 C 那枚 10/3，95x142）压到一行就糊，给两行高');
+  eq(m.imgSizeRole(pic(205, 142, ANA)), '2line', 'T70 带等号的分式（15/3=5，205x142）同理');
+  eq(m.imgSizeRole(pic(1221, 251, ANA)), '2line', 'T70 两行宽式超高那道门收它');
+  eq(m.imgSizeRole(pic(434, 165, ANA)), '2line', 'T70 竖式横得开（ratio 2.6）但也两行——第三道门专收这一格');
+  eq(m.imgSizeRole(pic(120, 40, ANA)), '1line', 'T70 句中一枚小图（360° 那类）本来就不到一行半');
+  eq(m.imgSizeRole(pic(0, 0, ANA)), '', 'T70 还没加载完拿不到 intrinsic 尺寸，这一轮不动它（load 事件会再扫一遍）');
+  eq(m.imgSizeRole(pic(110, 60, ANA)), '2line',
+    'T70 110x60 判两行：定高档把它压到 39px，封顶档（max-height）对这种本来没到顶的图是空操作——旧口径「判对了还是大」就是这么来的');
 
-  // —— 三档分工：inline（定高，与文字同大）| formula（封顶，压到几行高）| '' 原样 ——
-  // 分档依据是「本来就多高」，不是「像不像式子」：max-height:4em 是封顶，
-  // 对本来就没到顶的图是空操作（用户 10-09 晚那两枚 120x40 / 110x45 就是这样判对了也不动）。
-  eq(m.imgFitRole(pic(120, 40, OPT, txt('气温经常在'), txt('上下波动，昼夜温差较大，并有一定湿度'))), 'inline',
-    'T70 句中一枚小图（0℃/360° 那类，两边字都不够八个）走 inline 定高档——' +
-    '它在 formula 档里也判对，但 max-height 压不动 40px 的图，截图里「大」就是这么来的');
-  eq(m.imgFitRole(pic(110, 45, STEM, txt('一个举重三星象征转'), txt('后，其旋转轴心不可能用到'))), 'inline',
-    'T70 同一条：两边字都短 + 图本来就矮 → inline');
-  eq(m.imgFitRole(pic(1221, 251, ANA, txt('平均每个月的同比增量='), txt('亿元，正确；'))), 'formula',
-    'T70 两行宽公式超出 4em，走 formula 封顶档');
-  eq(m.imgFitRole(pic(434, 165, ANA, null, null)), 'formula',
-    'T70 解析里的竖式（434x165）超上限，走 formula');
-  eq(m.imgSizeRole(pic(0, 56, ANA), 'formula'), 'inline',
-    'T70 正好卡在 4em（56px）那条线上归 inline：封顶对「恰好到顶」的图没有必要');
-  eq(m.imgSizeRole(pic(0, 57, ANA), 'formula'), 'formula',
-    'T70 超过 4em 才归 formula 封顶档');
-  eq(m.imgSizeRole({ naturalHeight: 0 }, 'formula'), 'formula',
-    'T70 还没加载完拿不到高度时不改档，等 load 事件重扫（见下面那条接线）');
-  eq(m.imgFitRole(pic(800, 400, STEM, txt('如下图所示：'), null)), '',
-    'T70 领起词领着的图两档都不进，原样');
-  eq(m.IMG_INLINE_MAX_H, 56,
-    'T70 4em 分档线写在一处（.gth-qcard 各容器 font-size:14px，4em=56px）');
-  eq(m.IMG_BOTH_SIDES, 2,
-    'T70 「两边都有字就认它在句中」那个门槛：不必每边都攒够八个字（0℃ 那句前文只有五个字）');
+  // —— 两问接在一起：全程判档 ——
+  eq(m.imgFitRole(pic(293, 62, STEM, txt('…闲置区域，其中'), txt('，'))), '1line',
+    'T70 用户 10-11 那道题的第一枚：修之前它原样 293x62 摆在 14px 正文中间');
+  eq(m.imgFitRole(pic(205, 142, ANA, txt('则围栏费用是警示带费用的'), txt('倍。'))), '2line',
+    'T70 「倍」开头续写认它是式子，形状说它两行');
+  eq(m.imgFitRole(pic(1221, 251, ANA, null, null)), '2line',
+    'T70 解析里独占一段的两行裸公式（真页面实测 1221x251）认得出——用户 10-09 报的第一枚，走形状兜底');
+  eq(m.imgFitRole(pic(434, 165, ANA, null, null)), '2line', 'T70 解析里的竖式（434x165）同样走形状兜底');
+  eq(m.imgFitRole(pic(110, 150, OPT, null, null)), '2line',
+    'T70 选项里竖着的分式（用户 10-09 第二张截图：整张选项就是一张 1/16 图）认得出');
+  eq(m.imgFitRole(pic(650, 200, OPT, null, null)), '',
+    'T70 选项里横着的原样留着：那里放一张统计表是常事，只有竖着的才一定是分式');
+  eq(m.imgFitRole(pic(650, 226, ANA, null, null, null)), '2line',
+    'T70 裸的多行表格仍会走形状压掉——这一格是已知的取舍，靠点开看原尺寸兜底（见 AGENTS）');
+  eq(m.imgFitRole(pic(650, 226, ANA, null, null, txt('如下表：'))), '',
+    'T70 但只要上一段有领起词，就不压：多行表格与竖柱状图靠这一条躲开形状筛子');
+  eq(m.imgFitRole(pic(180, 520, ANA, null, null, txt('如下图所示：'))), '',
+    'T70 解析里竖着的柱状图（180x520）不再被当成竖式压掉——上一段「如下图所示：」说了算');
+  eq(m.imgFitRole(pic(300, 247, STEM, null, null, txt('则围栏费用是警示带的多少倍？'))), '',
+    'T70 几何图（300x247）没有领起词也保住：横方的图在题干里走形状兜底那一档');
+  eq(m.imgFitRole(pic(1017, 153, MAT, null, null)), '',
+    'T70 材料里的图先于一切判据豁免：那是题目本身，一个像素都不许动');
+  eq(m.imgFitRole(pic(0, 0, ANA, null, null)), '',
+    'T70 没加载完拿不到 intrinsic 尺寸，这一轮先不动它（load 事件会再扫一遍，见下面那条接线）');
+  eq(m.imgFitRole({}), '', 'T70 连 closest 都没有时不抛错');
+
+  // —— 接线：判出来的档要真的落到类名上，类名要真的带定高 ——
+  ok(fnSource('fitImgs').indexOf("'gth-img-1line'") >= 0 && fnSource('fitImgs').indexOf("'gth-img-2line'") >= 0,
+    'T70 两档各挂各的类名：只在函数里判对、没写进 classList，界面就还是原样');
+  ok(src.indexOf('img.gth-img-1line{height:1.4em') >= 0 && src.indexOf('img.gth-img-2line{height:2.8em') >= 0,
+    'T70 两档都是定高（1.4em≈20px / 2.8em≈39px，正文 14px）：写成 max-height 就压不动本来没到顶的图');
+  ok(!/gth-img-\w+\{[^}]*max-height/.test(src),
+    'T70 这两条里不许再出现 max-height：封顶那一档已被实测否掉两次');
+  ok(src.indexOf("document.addEventListener('load'") >= 0 &&
+     src.indexOf("e.target.tagName === 'IMG'") >= 0,
+    'T70 load 捕获段还在：图片加载不产生 childList 变化，400ms 观察器叫不动晚加载的图');
+  ok(src.indexOf('\n    fitImgs(document.body);') >= 0 && src.indexOf('\n    fitImgs(quizEl);') >= 0,
+    'T70 两处都要扫：站点自己渲染的那一屏与重练那一屏，漏一处就是那一屏的图没人管' +
+    '（认的是行首那一句——`fitImgsSoon` 里也有一处同名调用，光数子串会把删掉调用点判成还在）');
+  ok(fnSource('fitImgs').indexOf('dataset.gthFit === role') >= 0,
+    'T70 比对后再写 class：它在 400ms 观察器的射程里，无脑重写就是每轮给 body 喂一次属性变更');
+  ok(src.indexOf('openImgZoom(t.getAttribute') >= 0,
+    'T70 被缩过的图要绑得上「点开看原图」——那是认错时唯一没把人堵死的退路');
+  ok(fnSource('openImgZoom').indexOf("addEventListener('click', closeImgZoom)") >= 0,
+    'T70 看原图那一层点空白收得回：收不回就是又造了一扇关不掉的模态');
+  ok(ANA.indexOf('.gthq-material') < 0 && ANA.indexOf('.gthq-stem') < 0,
+    'T70 「形状兜底也收」那一档只有解析、笔记与页边：把材料与题干放进去就是把题目本身的图压小');
 
   // —— 常量与名单 ——
   eq(m.IMG_INLINE_TEXT, 8, 'T70 那个「八个字」的门槛写在一处，别散在判断里');
+  eq(m.IMG_BOTH_SIDES, 2,
+    'T70 「两边都有字就认它在句中」那个门槛：不必每边都攒够八个字（0℃ 那句前文只有五个字）');
   eq(m.IMG_FORMULA_RATIO, 2.2,
-    'T70 细长条的门槛写在一处：只在文字与领起词都不说话时才轮到它');
+    'T70 细长条的门槛写在一处：只在文字与领起词都不说话时才轮到它判身份');
+  eq(m.IMG_2LINE_RATIO, 2, 'T70 第一道门：宽不过高两倍的是叠行的（分式）');
+  eq(m.IMG_2LINE_TALL, 200, 'T70 第二道门：高过 200 的是多行的（实测两行宽式 251）');
+  eq(m.IMG_2LINE_MID, 120, 'T70 第三道门的下限：高过 120 才可能被疑为两行');
+  eq(m.IMG_2LINE_MID_RATIO, 3, 'T70 第三道门的上限：ratio<3 才收（竖式 434x165=2.6 靠它）');
   ok(m.imgIsLead('如下图所示：') && m.imgIsLead('如下表：') && m.imgIsLead('如下饼图所示：') &&
      m.imgIsLead('如下图') && m.imgIsLead('某市主要指标统计图'),
-    'T70 领起词认图表：领起词 + 到此收尾（可带冒号），或图表本身那种词');
-  ok(!m.imgIsLead('如下图可知') && !m.imgIsLead('如图可知，增速很快') && !m.imgIsLead('如下'),
-    'T70 但「如下图可知」那类**引述**不算领起——那是在说图，不是在引出图，' +
-    '跟着它的那枚图仍可能是式子（所以这一条必须走函数，不能是一条正则）');
+    'T70 领起词认图表：贴到图前那一步收尾（可带标点）才算');
+  ok(!m.imgIsLead('如下图可知') && !m.imgIsLead('如图可知，增速很快') && !m.imgIsLead('如下') &&
+     !m.imgIsLead('如图所示，边长为50米的等边三角形，其中'),
+    'T70 尾锚一条就挡掉两种情形：「如下图可知」那类**引述**（在说图不是在引出图），' +
+    '以及段首那句「如图所示，」往后传染整段（用户 10-11 那道题的第一枚）');
   ok(m.IMG_OP_TAIL.test('平均每个月的同比增量=') && m.IMG_OP_TAIL.test('增长率为') &&
      !m.IMG_OP_TAIL.test('如图'), 'T70 运算符结尾认「=为：」，不认「如图」那种领起');
   ok(m.IMG_CONT.test('亿元，正确；') && m.IMG_CONT.test('，增长最快') &&
-     !m.IMG_CONT.test('如下图所示：'), 'T70 续写开头认单位与标点');
+     m.IMG_CONT.test('倍。') && !m.IMG_CONT.test('如下图所示：'), 'T70 续写开头认单位与标点（「倍」是 10-11 那道题里的一枚）');
   ok(ANA.indexOf('.gthq-analysis') >= 0 && ANA.indexOf('.analysis') >= 0,
     'T70 我们自己那份解析与站点那份解析都要管（站点样式表里 .analysis img 一条都没有）');
   ok(MAT.indexOf('.gthq-material') >= 0 && MAT.indexOf('.material') >= 0,

@@ -666,8 +666,10 @@
 
   // 一张图该不该缩到和文字一样大，问的是「它在句子里扮演什么角色」，不是「它什么形状」。
   // 公式是句子的一部分（等号后面、单位前面），图是句子指向的东西（如下图所示）。
-  // 形状只是公式的副产物——所以拿宽高比当主判据，判竖着的柱状图与横着的多行表格都会判错。
-  // 文字语义定不下来的那两格（材料里的图、独占一段的图）才轮到形状兜底，且一律 keep。
+  // 形状只是公式的副产物——所以**身份那一问**不许拿宽高比当主判据，判竖着的柱状图与
+  // 横着的多行表格都会判错。**尺寸那一问**（要缩的这枚占几行）反过来只能靠形状：
+  // 读不到图里的内容，而行数就是式子的框高除以字号。两问不共用一条依据，别当成矛盾。
+  // 文字语义定不下来的那两格（材料里的图、独占一段的图）才轮到形状兜底身份，且一律 keep。
   //
   // 「前后文字」按 DOM 顺序取，跳过 <br> 与内联包裹（<span>/<font>/<b>）：
   // 编辑器爱把字包起来，只认 nodeType 3 的紧邻兄弟会漏掉一半排版（br 隔开与 span 包字那两条）。
@@ -676,23 +678,26 @@
   // 两边都有字就认它是句中的图，不必每边都攒够八个字：「气温经常在[0℃]上下波动」这种
   // 前文只有五个字（用户 10-09 晚第二张截图），按八个字判就掉到形状兜底里去了。
   var IMG_BOTH_SIDES = 2;
-  // 本来就不到 4em 高（.gth-qcard 各容器写死 font-size:14px，4em=56px）的图归 inline 档。
-  // 分档的依据是这条线而不是「像不像式子」：formula 档给的是 max-height:4em，那是**封顶**，
-  // 对本来就没到顶的图是空操作——120x40 那枚 40px 远小于 56px，判成 formula 也照样不动，
-  // 这正是用户 10-09 晚两张截图里「已经判对了还是大」的另一半原因。
-  // 所以 formula 档只收**确实超过上限**的图，收到就一定压得动；剩下的交给 inline 档定高。
-  var IMG_INLINE_MAX_H = 56;
+  // 这两道字数字槛不能撤：「见 [统计图] 可知」那种把图形夹在两个字中间的写法，
+  // 撤到各一个字就把 800x400 的统计表压成 78x39（用户 10-11 那道题上实测对照过）。
+  // 认出「这是式子」之后，缩到几行高才轮到形状：一枚式子的框高 = 行数 × 渲染字号，
+  // 而行数读不到，只能拿宽高比与绝对高度凑三道门。本题 11 枚真图实测：
+  // 单行式子 62–76 高（ratio 2.9–10）、分式 142 高（ratio 0.67–1.44）、两行宽式 251 高、
+  // 竖式 434x165（ratio 2.6，前两道门都放行，靠第三道门收回来）。
+  // 已知代价：120–200 高而 ratio<3 的单行式子会被给到两行高——比一行大 19px，仍远小于旧口径。
+  var IMG_2LINE_RATIO = 2;
+  var IMG_2LINE_TALL = 200;
+  var IMG_2LINE_MID = 120;
+  var IMG_2LINE_MID_RATIO = 3;
 
-// 领起词：这句在介绍一张图，那图就保持原尺寸。
-// 「如下图/如图」要么**到此收尾**，要么紧跟「所示」——不能是「可知/可以看出」那类**引述**：
-// 「如下图可知，增速很快」是在说图，不是在引出图，跟着它的那枚图仍可能是式子
-// （用户 10-09 晚那张台架就是被它错放过的）。别图省事写成 /如[下上]?[图表]/：
-// 那样「如下图可知」与「如图可知」都会命中，一条正则表达不了这个区别，得写成函数。
-  var IMG_LEAD_TAIL = /^如[下上]?[图表](?:所示|[、，,：:]*$)/;
-  var IMG_LEAD = /[图表]所示|饼图|柱状图|条形图|折线图|示意图|统计图|统计表/;
+  // 领起词：这句在介绍一张图，那图就保持原尺寸。**必须贴在图前面**（整条尾锚）：
+  // 「如图所示，边长为50米的等边三角形…」里那句是段首引述，不锚住尾巴就会把同段
+  // 后面每一枚行内式子都当成图放过去（用户 10-11 那道题的第一枚就是这样原样 293x62）。
+  // 尾锚顺带管住「如下图可知」那类引述——那句结尾是「可知」，不命中，不必再拆成函数判。
+  var IMG_LEAD = /(?:如[下上]?[图表](?:所示)?|[图表]所示|饼图|柱状图|条形图|折线图|示意图|统计图|统计表)[，,、：:]*$/;
 
   function imgIsLead(before) {
-    return IMG_LEAD_TAIL.test(before) || IMG_LEAD.test(before);
+    return IMG_LEAD.test(before);
   }
   // 运算符结尾：等号/冒号/「为」收尾，后面接的是式子
   var IMG_OP_TAIL = /[=＝:：是为约×÷+\-]\s*$/;
@@ -714,19 +719,19 @@
     return '';
   }
 
-  // 返回 'inline'（句中一个字，与文字同大）| 'formula'（式子，压到几行高）
-  //        | 'figure'（保持原尺寸）| null（文字说不清，交给形状）
+  // 文字语义这一层只答「式子还是图」——缩到几行是下一层按形状问的，两件事不混在这里。
+  // 返回 'math'（句子里的式子，要缩）| 'figure'（句子指向的图，原样）| null（文字说不清，交给形状）
   function imgTextRole(el) {
     var before = imgNeighborText(el, -1).replace(/\s+/g, '');
     var after = imgNeighborText(el, 1).replace(/\s+/g, '');
     if (!before && !after) return null;
     if (imgIsLead(before)) return 'figure';
-    if (IMG_OP_TAIL.test(before)) return 'formula';
-    if (IMG_CONT.test(after)) return 'formula';
+    if (IMG_OP_TAIL.test(before)) return 'math';
+    if (IMG_CONT.test(after)) return 'math';
     // 两边都顶着字，它在句子中间。够长的按式子算（分式两侧各有一截字）；
-    // 两边都不长的多是句中一个数字或符号（图里就写着 360°、0℃ 那类），走 inline 那一档。
-    if (before.length >= IMG_INLINE_TEXT && after.length >= IMG_INLINE_TEXT) return 'formula';
-    if (before.length >= IMG_BOTH_SIDES && after.length >= IMG_BOTH_SIDES) return 'inline';
+    // 两边都不长的多是句中一个数字或符号（图里就写着 360°、0℃ 那类）。
+    if (before.length >= IMG_INLINE_TEXT && after.length >= IMG_INLINE_TEXT) return 'math';
+    if (before.length >= IMG_BOTH_SIDES && after.length >= IMG_BOTH_SIDES) return 'math';
     return null;
   }
 
@@ -761,8 +766,8 @@
       var role = imgFitRole(el);
       if (el.dataset && el.dataset.gthFit === role) return;
       if (el.dataset) el.dataset.gthFit = role;
-      el.classList.toggle('gth-img-inline', role === 'inline');
-      el.classList.toggle('gth-img-formula', role === 'formula');
+      el.classList.toggle('gth-img-1line', role === '1line');
+      el.classList.toggle('gth-img-2line', role === '2line');
     });
   }
 
@@ -775,13 +780,13 @@
   var IMG_FRACTION_HOST = '.gthq-stem,.stem,.gthq-opts,.options';
   var IMG_FORMULA_RATIO = 2.2;
 
-  // 'inline'（与文字同大）| 'formula'（压到几行高）| ''（原样）
+  // '1line'（与文字同大）| '2line'（分式与竖式那种两行高的式子）| ''（原样）
   function imgFitRole(el) {
     if (!el.closest) return '';
     if (el.closest(IMG_MATERIAL_HOST)) return '';
     var role = imgTextRole(el);
     if (role === 'figure') return '';
-    if (role) return imgSizeRole(el, role);
+    if (role) return imgSizeRole(el);
     // 文字说不清：先看上一段有没有领起词（「如下图所示：」「如下表：」）——有就是一张图
     if (imgLeadNearby(el)) return '';
     // 还没有文字也没有领起词：这枚图自己独占一块。
@@ -790,21 +795,21 @@
     // 解析与笔记那一屏两种都有：竖式与两行宽公式都收，统计图与表格原样。
     if (!el.naturalHeight) return '';
     var tall = el.naturalHeight > el.naturalWidth;
-    if (el.closest(IMG_FRACTION_HOST)) return tall ? imgSizeRole(el, 'formula') : '';
+    if (el.closest(IMG_FRACTION_HOST)) return tall ? imgSizeRole(el) : '';
     if (!el.closest(IMG_FORMULA_HOST)) return '';
-    return (tall || el.naturalWidth >= el.naturalHeight * IMG_FORMULA_RATIO)
-      ? imgSizeRole(el, 'formula') : '';
+    return (tall || el.naturalWidth >= el.naturalHeight * IMG_FORMULA_RATIO) ? imgSizeRole(el) : '';
   }
 
-  // 认出「这是要缩的」之后，再按它本来有多高选档：已经不到 4em 的走 inline（定高），
-  // 超出的走 formula（封顶）。反过来不行——formula 档的 max-height 压不动没到顶的图。
-  function imgSizeRole(el, role) {
-    if (el.naturalHeight && el.naturalHeight <= IMG_INLINE_MAX_H) return 'inline';
-    return role;
+  // 该缩的图按「它占几行」定高：定高而不是封顶——封顶对本来就没到顶的图是空操作，
+  // 110x60 那枚判成两行也照样不动，那正是旧口径里「判对了还是大」的一半来源。
+  // 拿不到 intrinsic 尺寸（还没加载完）时返回空串，这一轮不动它，load 事件会再扫一遍。
+  function imgSizeRole(el) {
+    var w = el.naturalWidth || 0, h = el.naturalHeight || 0;
+    if (!h) return '';
+    if (w < h * IMG_2LINE_RATIO || h > IMG_2LINE_TALL ||
+      (h > IMG_2LINE_MID && w < h * IMG_2LINE_MID_RATIO)) return '2line';
+    return '1line';
   }
-
-  // 只要「该不该缩」这个布尔时用这个（点开看原图那条判断关心的是「被缩过」）
-  function imgIsFormula(el) { return !!imgFitRole(el); }
 
   var fitImgsSoon = debounce(function () { fitImgs(document.body); }, 150);
 
@@ -830,12 +835,12 @@
     imgZoomEl.hidden = false;
   }
 
-  // 被压小的公式图点一下看原尺寸：这是「认错了也不把人堵死」的那一步退路
-  // 两档都算缩过：gth-img-inline（行内小图）与 gth-img-formula（式子）
+  // 被压小的式子点一下看原尺寸：这是「认错了也不把人堵死」的那一步退路
+  // 两档都算缩过：gth-img-1line（行内式）与 gth-img-2line（分式与竖式）
   document.addEventListener('click', function (e) {
     var t = e.target;
     if (t && t.tagName === 'IMG' &&
-      (t.classList.contains('gth-img-formula') || t.classList.contains('gth-img-inline'))) {
+      (t.classList.contains('gth-img-2line') || t.classList.contains('gth-img-1line'))) {
       openImgZoom(t.getAttribute('src') || t.getAttribute('data-src') || '');
     }
   }, true);
@@ -2582,14 +2587,14 @@
     'background:transparent;border:none;padding:0}',
 
     '.gthq-material img,.gthq-stem img,.gthq-opts img,.gthq-analysis img,.gth-note-text img,.gth-apanel img,.gth-aside img{max-width:100%;height:auto;display:inline-block;vertical-align:middle;margin:2px 0;border-radius:6px}',
-    // 分两档，因为「上限」对已经够小的图不起作用：
-    //   gth-img-inline —— 行内小图（数字、符号、单位，natural 高本来就 < 4em）。
-    //     max-height 对它们是空操作（120x40 那枚 40px 远小于 4em=56px，判对了也不动），
-    //     必须给**确定的高度**：height:1.15em + width:auto，按 intrinsic 比例缩，宽的式子也一起收。
-    //   gth-img-formula —— 两行式子与分式，natural 高远超行高，用 max-height 4em / max-width 340px 收口。
+    // 两档都**定高**，不用 max-height：封顶对本来就没到顶的图是空操作
+    //   （110x60 那枚判成两行，max-height 压不动它，照样 60px 高）。
+    //   gth-img-1line —— 行内式：句子里当一个字用。取 1.4em 而不是 1.15em，因为 MathJax
+    //     出的图自带内边距，16px 的框里墨迹只有 11–12px，比 14px 正文明显小一圈。
+    //   gth-img-2line —— 叠行式（分式与竖式）：图里的字仍与正文同大，整枚占两行高。
     // 两条同为 0,1,1 特异性，排在上面那条之后，后写的才盖得住「max-width:100% + height:auto」。
-    'img.gth-img-inline{height:1.15em;width:auto;max-width:100%;cursor:zoom-in}',
-    'img.gth-img-formula{max-height:4em;max-width:340px;width:auto;height:auto;cursor:zoom-in}',
+    'img.gth-img-1line{height:1.4em;width:auto;max-width:100%;cursor:zoom-in}',
+    'img.gth-img-2line{height:2.8em;width:auto;max-width:100%;cursor:zoom-in}',
     '#gth-imgzoom{position:fixed;top:0;left:0;right:0;bottom:0;z-index:100002;display:flex;',
     'align-items:center;justify-content:center;padding:32px;box-sizing:border-box;background:rgba(15,23,42,.72)}',
     '#gth-imgzoom[hidden]{display:none}',

@@ -264,21 +264,21 @@
     "to": "  var IMG_INLINE_TEXT = 0;"
   },
   {
-    "name": "I2 门槛去掉（紧邻任何文字都算行内，「如图」也会压小表）",
+    "name": "I2 字数字槛撤到一字（夹在「见…可知」中间的统计表被压成一行高）",
     "file": "shangancun-exam-helper.user.js",
-    "from": "        String(node.nodeValue || '').replace(/\\s+/g, '').length >= IMG_INLINE_TEXT;",
-    "to": "        String(node.nodeValue || '').replace(/\\s+/g, '').length > 0;"
+    "from": "    if (before.length >= IMG_BOTH_SIDES && after.length >= IMG_BOTH_SIDES) return 'math';",
+    "to": "    if (before.length > 0 && after.length > 0) return 'math';"
   },
   {
-    "name": "I3 公式档整条删掉（解析里那枚两行公式回到 11 行高）",
+    "name": "I3 叠行档整条删掉（分式回到原尺寸，142px 摆在 14px 正文中间）",
     "file": "shangancun-exam-helper.user.js",
-    "from": "    'img.gth-img-formula{max-height:4em;max-width:340px;width:auto;height:auto;cursor:zoom-in}',\n",
+    "from": "    'img.gth-img-2line{height:2.8em;width:auto;max-width:100%;cursor:zoom-in}',\n",
     "to": ""
   },
   {
     "name": "I4 扫图不比对就每轮重写 class",
     "file": "shangancun-exam-helper.user.js",
-    "from": "      if (el.dataset && el.dataset.gthFit === want) return;",
+    "from": "      if (el.dataset && el.dataset.gthFit === role) return;\n",
     "to": ""
   },
   {
@@ -294,22 +294,22 @@
     "to": ""
   },
   {
-    "name": "I7 公式上限写成死像素（不跟字号走）",
+    "name": "I7 行内档写成死像素（不跟字号走）",
     "file": "shangancun-exam-helper.user.js",
-    "from": "img.gth-img-formula{max-height:4em;max-width:340px",
-    "to": "img.gth-img-formula{max-height:56px;max-width:340px"
+    "from": "img.gth-img-1line{height:1.4em",
+    "to": "img.gth-img-1line{height:20px"
   },
   {
-    "name": "I8 解析容器那一路去掉（那枚两行公式又没人管了）",
+    "name": "I8 解析容器那一路去掉（名单外的容器也被形状兜底伸手）",
     "file": "shangancun-exam-helper.user.js",
-    "from": "    if (el.closest(IMG_FORMULA_HOST)) return tall || strip;\n",
+    "from": "    if (!el.closest(IMG_FORMULA_HOST)) return '';\n",
     "to": ""
   },
   {
-    "name": "I9 细长条那道筛子去掉（解析里的饼图也被压成一行高）",
+    "name": "I9 细长条那道筛子去掉（解析里两行宽公式认不出）",
     "file": "shangancun-exam-helper.user.js",
-    "from": "    var strip = el.naturalWidth >= el.naturalHeight * IMG_FORMULA_RATIO;",
-    "to": "    var strip = true;"
+    "from": "    return (tall || el.naturalWidth >= el.naturalHeight * IMG_FORMULA_RATIO) ? imgSizeRole(el) : '';",
+    "to": "    return tall ? imgSizeRole(el) : '';"
   },
   {
     "name": "I10 高宽比门槛调到 0（等于不筛）",
@@ -318,10 +318,10 @@
     "to": "  var IMG_FORMULA_RATIO = 0;"
   },
   {
-    "name": "I11 没加载完也照判（intrinsic 尺寸是 0，公式永远认不出）",
+    "name": "I11 没加载完也照判（intrinsic 是 0 就被当成两行宽式）",
     "file": "shangancun-exam-helper.user.js",
-    "from": "    if (!el.naturalHeight) return false;\n",
-    "to": ""
+    "from": "    var w = el.naturalWidth || 0, h = el.naturalHeight || 0;\n    if (!h) return '';",
+    "to": "    var w = el.naturalWidth || 0, h = el.naturalHeight || 0;"
   },
   {
     "name": "I12 晚加载的图没人重扫（load 不产生 childList，观察器叫不动）",
@@ -432,28 +432,34 @@
     "to": "    var q = bookFilter.q.trim().toLowerCase();"
   },
   {
-    "name": "U10 按祖先的文字判行内（隔层正文也算进来）",
+    "name": "U10 邻居只认文本节点（<span>/<font> 包住的字看不见）",
     "file": "shangancun-exam-helper.user.js",
-    "from": "      return !!node && node.nodeType === 3 &&\n        String(node.nodeValue || '')",
-    "to": "      return !!node && (node.nodeType === 3 || node.nodeType === 1) &&\n        String(node.textContent || node.nodeValue || '')"
+    "from": "      } else if (n.nodeType === 1 && !/^(BR|IMG)$/.test(n.nodeName)) {",
+    "to": "      } else if (false) {"
   },
   {
-    "name": "U11 只看前面不看后面",
+    "name": "U11 只看前面不看后面（接「倍。」那枚分式认不出）",
     "file": "shangancun-exam-helper.user.js",
-    "from": "    return words(el.previousSibling) || words(el.nextSibling);",
-    "to": "    return words(el.previousSibling);"
+    "from": "    if (IMG_CONT.test(after)) return 'math';\n",
+    "to": ""
   },
   {
     "name": "U12 置灰的界挪回第二趟之后（两处一起挪）",
     "file": "shangancun-exam-helper.user.js",
-    "from": ["    }).then(function (zyList) {", "      renderBookList();\n    })).catch(function (e) {"],
-    "to": ["    })).then(function (zyList) {", "      renderBookList();\n    }).catch(function (e) {"]
+    "from": [
+      "    }).then(function (zyList) {",
+      "      renderBookList();\n    })).catch(function (e) {"
+    ],
+    "to": [
+      "    })).then(function (zyList) {",
+      "      renderBookList();\n    }).catch(function (e) {"
+    ]
   },
   {
     "name": "I16 选项里竖着的分式不认（1/16 那种图回到原尺寸）",
     "file": "shangancun-exam-helper.user.js",
-    "from": "    return tall && !!el.closest(IMG_FRACTION_HOST);",
-    "to": "    return false;"
+    "from": "    if (el.closest(IMG_FRACTION_HOST)) return tall ? imgSizeRole(el) : '';",
+    "to": "    if (el.closest(IMG_FRACTION_HOST)) return '';"
   },
   {
     "name": "I17 竖式判据去掉（分式那一档整个失效）",
@@ -462,10 +468,10 @@
     "to": "    var tall = false;"
   },
   {
-    "name": "I18 题干与选项里的横图也算公式（统计表被压成一行高）",
+    "name": "I18 题干与选项里的横图也算式子（统计表被压成一行高）",
     "file": "shangancun-exam-helper.user.js",
-    "from": "    return tall && !!el.closest(IMG_FRACTION_HOST);",
-    "to": "    return !!el.closest(IMG_FRACTION_HOST);"
+    "from": "    if (el.closest(IMG_FRACTION_HOST)) return tall ? imgSizeRole(el) : '';",
+    "to": "    if (el.closest(IMG_FRACTION_HOST)) return imgSizeRole(el);"
   },
   {
     "name": "W1 暂停那一路改回 else（真实用时又把暂停漏掉）",
@@ -502,5 +508,59 @@
     "file": "shangancun-exam-helper.user.js",
     "from": "    $$('.gth-qtime.on').forEach(function (b) { b.classList.remove('on'); });\n",
     "to": ""
+  },
+  {
+    "name": "I19 领起词不锚到句尾（段首那句「如图所示，」传染整段）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "  var IMG_LEAD = /(?:如[下上]?[图表](?:所示)?|[图表]所示|饼图|柱状图|条形图|折线图|示意图|统计图|统计表)[，,、：:]*$/;",
+    "to": "  var IMG_LEAD = /(?:如[下上]?[图表](?:所示)?|[图表]所示|饼图|柱状图|条形图|折线图|示意图|统计图|统计表)[，,、：:]*/;"
+  },
+  {
+    "name": "I20 第一道门关掉（分式按宽高比当成一行）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "  var IMG_2LINE_RATIO = 2;",
+    "to": "  var IMG_2LINE_RATIO = 0;"
+  },
+  {
+    "name": "I21 第二道门关掉（两行宽式当一行缩）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "  var IMG_2LINE_TALL = 200;",
+    "to": "  var IMG_2LINE_TALL = 99999;"
+  },
+  {
+    "name": "I22 第三道门关掉（竖式 434x165 回到一行高）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "  var IMG_2LINE_MID_RATIO = 3;",
+    "to": "  var IMG_2LINE_MID_RATIO = 0;"
+  },
+  {
+    "name": "I23 定高改回封顶（本来没到顶的图压不动）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "img.gth-img-2line{height:2.8em",
+    "to": "img.gth-img-2line{max-height:2.8em"
+  },
+  {
+    "name": "I24 行内档退回 1.15em（框里的墨迹比正文小一圈）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "img.gth-img-1line{height:1.4em",
+    "to": "img.gth-img-1line{height:1.15em"
+  },
+  {
+    "name": "I25 两行档退回 4em 封顶（用户 10-11 报的就是这个大小）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "img.gth-img-2line{height:2.8em",
+    "to": "img.gth-img-2line{max-height:4em"
+  },
+  {
+    "name": "I26 站点那一屏不再扫图（fitImgs 两处调用少一处）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    fitImgs(document.body);\n",
+    "to": ""
+  },
+  {
+    "name": "I27 材料挤进「形状也收」那一档（题目本身的图被压小）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "  var IMG_FORMULA_HOST = '.gthq-analysis,.analysis,.gth-note-text,.gth-aside,.gth-apanel';",
+    "to": "  var IMG_FORMULA_HOST = '.gthq-analysis,.analysis,.gth-note-text,.gth-aside,.gth-apanel,.gthq-material';"
   }
 ]

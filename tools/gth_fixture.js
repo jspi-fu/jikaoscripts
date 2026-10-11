@@ -65,9 +65,11 @@ var BOOT = [
   '  \'<text x="16" y="40" font-size="22">统计表：某市主要指标</text></svg>\');',
   // 第三枚起：站点公式图的替身，比例照真页面那批造（细长条 / 饼图 / 材料里的表头各一枚）——
   // 实测尺寸与分档口径在 AGENTS 的「站点题干与解析里的公式图」那条，这里只留形状
+  // 900x180 那一份已换成实测的 1221x251：替身的高与比例就是分档的依据，随手造一个比例
+  // 相近但高度落在另一档里的尺寸，量到的永远是替身而不是真页面（10-11 夹具当场报出来过）
   'window.FIX_FORMULA_BIG = "data:image/svg+xml;utf8," + encodeURIComponent(',
-  '  \'<svg xmlns="http://www.w3.org/2000/svg" width="900" height="180"><rect width="900" height="180" fill="#f4f6fb"/>\' +',
-  '  \'<text x="20" y="120" font-size="120">4694/(1+1/9) = 67</text></svg>\');',
+  '  \'<svg xmlns="http://www.w3.org/2000/svg" width="1221" height="251"><rect width="1221" height="251" fill="#f4f6fb"/>\' +',
+  '  \'<text x="20" y="170" font-size="150">4694/(1+1/9) = 67</text></svg>\');',
   // 解析里偶尔放的「图」（饼图/立体图，高宽比 1.5 左右）：这一类不许被公式档带走
   'window.FIX_PIE = "data:image/svg+xml;utf8," + encodeURIComponent(',
   '  \'<svg xmlns="http://www.w3.org/2000/svg" width="670" height="450"><rect width="670" height="450" fill="#eef3ff"/>\' +',
@@ -85,6 +87,26 @@ var BOOT = [
   'window.FIX_OPT_TABLE = "data:image/svg+xml;utf8," + encodeURIComponent(',
   '  \'<svg xmlns="http://www.w3.org/2000/svg" width="650" height="200"><rect width="650" height="200" fill="#eef7ee"/>\' +',
   '  \'<text x="20" y="110" font-size="72">选项里的统计表</text></svg>\');',
+  // 2026-10-11 用户报的那道等边三角形题：三种形状各照真图的比例造一枚（尺寸是从站点抓下来读的）
+  // 293x62 = 句中一行式子（DE⊥AB），630x64 = 宽的一行式子（∠ABC=∠ACB=60°），
+  // 205x142 = 带等号的分式（15/3=5），434x165 = 竖式，300x247 = 几何图。
+  'window.FIX_ONELINE = "data:image/svg+xml;utf8," + encodeURIComponent(',
+  '  \'<svg xmlns="http://www.w3.org/2000/svg" width="293" height="62"><rect width="293" height="62" fill="#f2f4f8"/>\' +',
+  '  \'<text x="8" y="44" font-size="40">DE ⊥ AB</text></svg>\');',
+  'window.FIX_ONELINE_WIDE = "data:image/svg+xml;utf8," + encodeURIComponent(',
+  '  \'<svg xmlns="http://www.w3.org/2000/svg" width="630" height="64"><rect width="630" height="64" fill="#f2f4f8"/>\' +',
+  '  \'<text x="8" y="46" font-size="42">∠ABC = ACB = 60°</text></svg>\');',
+  'window.FIX_FRAC_EQ = "data:image/svg+xml;utf8," + encodeURIComponent(',
+  '  \'<svg xmlns="http://www.w3.org/2000/svg" width="205" height="142"><rect width="205" height="142" fill="#f7f7f7"/>\' +',
+  '  \'<text x="18" y="52" font-size="46">15</text><line x1="8" y1="72" x2="78" y2="72" stroke="#000"/>\' +',
+  '  \'<text x="30" y="126" font-size="46">3</text><text x="96" y="96" font-size="46">= 5</text></svg>\');',
+  'window.FIX_VDIV = "data:image/svg+xml;utf8," + encodeURIComponent(',
+  '  \'<svg xmlns="http://www.w3.org/2000/svg" width="434" height="165"><rect width="434" height="165" fill="#fbf6ef"/>\' +',
+  '  \'<text x="16" y="70" font-size="52">7√349</text><line x1="86" y1="84" x2="300" y2="84" stroke="#000"/>\' +',
+  '  \'<text x="120" y="148" font-size="52">241</text></svg>\');',
+  'window.FIX_GEOM = "data:image/svg+xml;utf8," + encodeURIComponent(',
+  '  \'<svg xmlns="http://www.w3.org/2000/svg" width="300" height="247"><rect width="300" height="247" fill="#eef3ff"/>\' +',
+  '  \'<text x="100" y="140" font-size="60">几何图</text></svg>\');',
   // 站点那几个接口在夹具里由假数据回答（以前一律 onerror，于是组卷、与站点核对、补齐题面
   // 三条路在假页面里根本走不到，重练那一屏与报告卡片里的笔记区就一直量不出来）
   'window.FIX_SITE_QS = [];',
@@ -154,20 +176,26 @@ var BOOT = [
   '}));',
   '// 补上 45 道只有笔记台记得的题，补充题本才够翻三页（一页 20 题那条口径要真的量得出来）',
   'var _st = JSON.parse(localStorage.getItem("gongan_tiku_helper_mingshi"));',
-  // 同一枚大图按五种真实可能出现的排版各放一次，材料里再放一枚「形状像公式」的细长条；
-  // ?gth_img=1 逐枚量渲染高度，并按 data-gth-shape 上的「应压 / 应不压」自己下判词
-  'var FIX_SHAPES = "<p>8人参加演讲比赛，抽签决定参赛顺序，有<img data-gth-shape=\\"A 前后是文字|应压\\" src=\\"" + FIX_FORMULA_BIG + "\\">" +',
+  // 每枚按它真可能出现的那一种排版摆一次，标签上直接写该落到哪一档（一行 / 两行 / 原样）；
+  // ?gth_img=1 逐枚量渲染高度并按这一条自己下判词
+  'var FIX_SHAPES = "<p>如图所示，边长为50米的等边三角形ABC是一块闲置区域，其中<img data-gth-shape=\\"I 段首引述后的行内式|一行\\" src=\\"" + FIX_ONELINE + "\\">" +',
+  '  "，<img data-gth-shape=\\"J 同段第二枚|一行\\" src=\\"" + FIX_ONELINE + "\\"></p>" +',
+  '  "<p>则围栏费用是警示带费用的<img data-gth-shape=\\"K 分式接「倍」|两行\\" src=\\"" + FIX_FRAC_EQ + "\\">倍。</p>" +',
+  '  "<p>由题意可知<img data-gth-shape=\\"L 宽的一行式子|一行\\" src=\\"" + FIX_ONELINE_WIDE + "\\">；</p>" +',
+  '  "<p>计算如下：<img data-gth-shape=\\"M 竖式|两行\\" src=\\"" + FIX_VDIV + "\\"></p>" +',
+  '  "<p>8人参加演讲比赛，抽签决定参赛顺序，有<img data-gth-shape=\\"A 前后是文字|两行\\" src=\\"" + FIX_FRACTION + "\\">" +',
   '  "种情况，最多的是？</p>" +',
-  '  "<p>平均每个月的同比增量=</p><p><img data-gth-shape=\\"B 独占一段|应压\\" src=\\"" + FIX_FORMULA_BIG + "\\"></p><p>亿元，正确；</p>" +',
-  '  "<p>平均每个月的同比增量=<br><img data-gth-shape=\\"C br 隔开|应压\\" src=\\"" + FIX_FORMULA_BIG + "\\"><br>亿元，正确；</p>" +',
-  '  "<p><span>平均每个月的同比增量=</span><img data-gth-shape=\\"D span 包字|应压\\" src=\\"" + FIX_FORMULA_BIG + "\\">" +',
+  '  "<p>平均每个月的同比增量=</p><p><img data-gth-shape=\\"B 独占一段|两行\\" src=\\"" + FIX_FORMULA_BIG + "\\"></p><p>亿元，正确；</p>" +',
+  '  "<p>平均每个月的同比增量=<br><img data-gth-shape=\\"C br 隔开|两行\\" src=\\"" + FIX_FORMULA_BIG + "\\"><br>亿元，正确；</p>" +',
+  '  "<p><span>平均每个月的同比增量=</span><img data-gth-shape=\\"D span 包字|两行\\" src=\\"" + FIX_FORMULA_BIG + "\\">" +',
   '  "<span>亿元，正确；</span></p>" +',
-  '  "<p>如下饼图所示：</p><p><img data-gth-shape=\\"E 解析里的饼图|应不压\\" src=\\"" + FIX_PIE + "\\"></p>";',
+  '  "<p>如下饼图所示：</p><p><img data-gth-shape=\\"E 解析里的饼图|原样\\" src=\\"" + FIX_PIE + "\\"></p>" +',
+  '  "<p>则围栏费用是警示带的多少倍？</p><p style=\\"text-align:center\\"><img data-gth-shape=\\"N 几何图靠形状|原样\\" src=\\"" + FIX_GEOM + "\\"></p>";',
   'for (var _i = 1; _i <= 45; _i++) {',
   '  _st.mockQs[1000 + _i] = { id: 1000 + _i, content: "<p>补充分页第 " + _i + " 题：下面哪一项说法正确？</p>",',
-  '    material: _i === 1 ? "<p><img data-gth-shape=\\"F 材料里的细长条|应不压\\" src=\\"" + FIX_MAT_STRIP + "\\"></p>" : "",',
-  '    opt: _i === 1 ? [{ label: "A", content: "<img data-gth-shape=\\"G 选项里的分式|应压\\" src=\\"" + FIX_FRACTION + "\\">" },',
-  '      { label: "B", content: "<img data-gth-shape=\\"H 选项里的横图|应不压\\" src=\\"" + FIX_OPT_TABLE + "\\">" }]',
+  '    material: _i === 1 ? "<p><img data-gth-shape=\\"F 材料里的细长条|原样\\" src=\\"" + FIX_MAT_STRIP + "\\"></p>" : "",',
+  '    opt: _i === 1 ? [{ label: "A", content: "<img data-gth-shape=\\"G 选项里的分式|两行\\" src=\\"" + FIX_FRACTION + "\\">" },',
+  '      { label: "B", content: "<img data-gth-shape=\\"H 选项里的横图|原样\\" src=\\"" + FIX_OPT_TABLE + "\\">" }]',
   '      : [{ label: "A", content: "甲说" }, { label: "B", content: "乙说" }], correct_answer: ["A"], user_answer: ["B"],',
   '    analysis: _i === 1 ? FIX_SHAPES : "<p>第 " + _i + " 题的解析正文，用来验收起与展开。</p>", content_type: 0, module: "资料分析",',
   '    examId: 5158, done: 1, ok: 0, at: Date.now() - 60000 * _i };',
@@ -200,13 +228,17 @@ var BOOT = [
   '    var host = el.closest(".gthq-analysis,.gthq-stem,.gthq-material") || el.parentElement;',
   '    var lh = parseFloat(getComputedStyle(host).lineHeight) || 28;',
   '    var shape = el.dataset.gthShape;',
-  // 应压的那几枚上限是 4em（56px）；应不压的必须还是大图——两个方向都要红得出来',
-  '    var wantSmall = shape.indexOf("应压") >= 0;',
-  '    var okRow = wantSmall ? r.height <= 60 : r.height >= 100;',
+  // 三档各自的窗口：一行 1.4em≈20px、两行 2.8em≈39px、原样必须还是大图。
+  // 认出的档也要对上——只量高度会把「判错档但尺寸恰好落在窗口里」那种蒙对算成过
+  '    var want = shape.split("|")[1];',
+  '    var got = el.classList.contains("gth-img-1line") ? "一行" :',
+  '      el.classList.contains("gth-img-2line") ? "两行" : "原样";',
+  '    var okRow = got === want && (want === "原样" ? r.height >= 100 :',
+  '      want === "一行" ? (r.height >= 14 && r.height <= 24) : (r.height >= 30 && r.height <= 44));',
   '    if (!okRow) bad++;',
   '    n++;',
   '    rows.push([okRow ? "OK  " : "BAD ", shape,',
-  '      el.classList.contains("gth-img-formula") ? "认作公式" : "没认",',
+  '      "判=" + got,',
   '      Math.round(r.width) + "x" + Math.round(r.height),',
   '      "原" + el.naturalWidth + "x" + el.naturalHeight,',
   '      "倍" + (r.height / lh).toFixed(1),',
@@ -222,7 +254,7 @@ var BOOT = [
   '}',
   // ?gth_img=2 多走一步：点一枚被压小的公式图，量「点开看原图」那一层开不开、收不收得回
   'function __gthZoomProbe() {',
-  '  var f = document.querySelector("#gth-book-list img.gth-img-formula");',
+  '  var f = document.querySelector("#gth-book-list img.gth-img-2line");',
   '  if (!f) return;',
   '  f.click();',
   '  setTimeout(function () {',
