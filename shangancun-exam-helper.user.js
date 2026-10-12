@@ -784,6 +784,10 @@
   var IMG_FORMULA_HOST = '.gthq-analysis,.analysis,.gth-note-text,.gth-aside,.gth-apanel';
   var IMG_FRACTION_HOST = '.gthq-stem,.stem,.gthq-opts,.options';
   var IMG_FORMULA_RATIO = 2.2;
+  // 细长条的窄门：独立的一行式子（本批实测框高 62–76）压到一行高没有风险，框高过这条线的
+  // 独立图一律放过。80 这一条只有这一批数据撑着——10-09 那批「单行式子高 124–168」会从这儿漏过去，
+  // 那是选出来的取舍：漏过去只是偏大，压错了是读不了。
+  var IMG_STRIP_MAX_H = 80;
 
   // '1line'（与文字同大）| '2line'（分式与竖式那种两行高的式子）| ''（原样）
   function imgFitRole(el) {
@@ -802,7 +806,13 @@
     var tall = el.naturalHeight > el.naturalWidth;
     if (el.closest(IMG_FRACTION_HOST)) return tall ? imgSizeRole(el) : '';
     if (!el.closest(IMG_FORMULA_HOST)) return '';
-    return (tall || el.naturalWidth >= el.naturalHeight * IMG_FORMULA_RATIO) ? imgSizeRole(el) : '';
+    if (tall) return imgSizeRole(el);
+    // 细长条这一支只收「确实占两行」的那种大公式。一枚几何上只有一行的独立图，压到一行高
+    // 收益小、误杀代价大——图形推理那块六图（628x153）就是这么被压成 80x20 的（用户 10-11 第二轮）；
+    // 压错了读不了，偏大只是不好看，所以这一格宁可放过。竖着那一支不受此限：那里没有「只有一行」的图形块。
+    var strip = el.naturalWidth >= el.naturalHeight * IMG_FORMULA_RATIO;
+    var size = imgSizeRole(el);
+    return (strip && (size === '2line' || el.naturalHeight <= IMG_STRIP_MAX_H)) ? size : '';
   }
 
   // 该缩的图按「它占几行」定高：定高而不是封顶——封顶对本来就没到顶的图是空操作，

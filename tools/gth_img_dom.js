@@ -40,7 +40,7 @@ function varOf(name) {
   }
 }
 const CONSTS = ['IMG_INLINE_TEXT', 'IMG_BOTH_SIDES', 'IMG_2LINE_RATIO', 'IMG_2LINE_TALL', 'IMG_2LINE_MID',
-  'IMG_2LINE_MID_RATIO', 'IMG_LEAD', 'IMG_OP_HARD', 'IMG_OP_SOFT', 'IMG_CONT',
+  'IMG_2LINE_MID_RATIO', 'IMG_LEAD', 'IMG_OP_HARD', 'IMG_OP_SOFT', 'IMG_CONT', 'IMG_STRIP_MAX_H',
   'IMG_MATERIAL_HOST', 'IMG_TEXT_HOST', 'IMG_FORMULA_HOST', 'IMG_FRACTION_HOST', 'IMG_FORMULA_RATIO'];
 const FNS = ["imgIsLead", "imgNeighborText", "imgTextRole", "imgLeadNearby", "imgSizeRole", "imgFitRole"];
 const impl = new Function([
@@ -122,7 +122,10 @@ const CASES = [
   ['解析·饼图', 'analysis', '<p>如下饼图所示：</p><p><img></p>', 670, 447, 'keep', '饼图原样'],
   ['解析·纵向柱状图', 'analysis', '<p>如下图所示：</p><p><img></p>', 180, 520, 'keep', '竖柱状图，不是分式'],
   ['解析·多行表格', 'analysis', '<p>如下表：</p><p><img></p>', 650, 226, 'keep', '细长条筛子会误伤它'],
-  ['解析·独立统计图', 'analysis', '<p><img></p>', 420, 260, 'keep', '独占一段的图原样']
+  ['解析·独立统计图', 'analysis', '<p><img></p>', 420, 260, 'keep', '独占一段的图原样'],
+  // 10-11 第二轮：图形推理那块六图（实测 628x153）独占一段、前后无字、上一段以冒号收尾，
+  // 细长条进得去，但形状说它只有一行高——这一格守的是「宁可放过，别压到读不了」。
+  ['解析·独立一行高图块', 'analysis', '<p><img></p>', 628, 153, 'keep', '细长条进得去但只有一行 → 放回来']
 ];
 
 // 边界与站点原生容器：判据在这些排版上不能抛错、也不能判反。

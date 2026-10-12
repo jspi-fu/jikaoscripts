@@ -90,7 +90,7 @@ const CONSTS = ['SUBJ_ZY', 'SUBJ_XC', 'SUBJECT_NAME', 'DAY_RANGES', 'SITE_LIST_C
   'notesFilter', 'notesSearchKey', 'examPointModule', 'SRC_LIST_LABEL', 'BOOK_PER_PAGE',
   'bookShownIds', 'bookPage', 'faceTried', 'IMG_INLINE_TEXT', 'IMG_BOTH_SIDES',
   'IMG_2LINE_RATIO', 'IMG_2LINE_TALL', 'IMG_2LINE_MID', 'IMG_2LINE_MID_RATIO',
-  'IMG_LEAD', 'IMG_OP_HARD', 'IMG_OP_SOFT', 'IMG_CONT', 'IMG_MATERIAL_HOST', 'IMG_TEXT_HOST', 'bookFilter',
+  'IMG_LEAD', 'IMG_OP_HARD', 'IMG_OP_SOFT', 'IMG_CONT', 'IMG_STRIP_MAX_H', 'IMG_MATERIAL_HOST', 'IMG_TEXT_HOST', 'bookFilter',
   'IMG_FORMULA_HOST', 'IMG_FRACTION_HOST', 'IMG_FORMULA_RATIO'];
 
 const FNS = ['ansKey', 'serverErrCount', 'errCountOf', 'masteredLabel', 'isMastered',
@@ -194,7 +194,7 @@ const EXPOSED = [
   'qtimeExamId', 'qtimeAll', 'qtimeSession', 'qtimeSec', 'qtimeText',
   'qtimeOrder', 'qtimeRows', 'recapSig', 'qtimeBandHtml', 'imgNeighborText', 'imgTextRole',
   'imgIsLead', 'imgLeadNearby', 'imgSizeRole', 'imgFitRole', 'IMG_INLINE_TEXT', 'IMG_BOTH_SIDES',
-  'IMG_2LINE_RATIO', 'IMG_2LINE_TALL', 'IMG_2LINE_MID', 'IMG_2LINE_MID_RATIO', 'IMG_LEAD', 'IMG_OP_HARD', 'IMG_OP_SOFT', 'IMG_CONT',
+  'IMG_2LINE_RATIO', 'IMG_2LINE_TALL', 'IMG_2LINE_MID', 'IMG_2LINE_MID_RATIO', 'IMG_LEAD', 'IMG_OP_HARD', 'IMG_OP_SOFT', 'IMG_CONT', 'IMG_STRIP_MAX_H',
   'IMG_MATERIAL_HOST', 'IMG_TEXT_HOST', 'IMG_FORMULA_HOST', 'IMG_FRACTION_HOST', 'IMG_FORMULA_RATIO',
   'tallySecond', 'recSum', 'copyWithToast',
   'getQtimeErr: function () { return qtimeErr; }',
@@ -2233,6 +2233,12 @@ async function t67() {
     'T70 「两边都有字就认它在句中」那个门槛：不必每边都攒够八个字（0℃ 那句前文只有五个字）');
   eq(m.IMG_FORMULA_RATIO, 2.2,
     'T70 细长条的门槛写在一处：只在文字与领起词都不说话时才轮到它判身份');
+  eq(m.imgFitRole(pic(628, 153, ANA, null, null, txt('把下面的六个图形分为两类,使每一类图形都有各自的共同特征或规律,分类正确的一项是：'))), '',
+    'T70 独立的一行高图形块（六图 628x153）：细长条进得去，但形状说它只有一行、又高过窄门 → 放回来');
+  eq(m.imgFitRole(pic(293, 62, ANA, null, null, txt('如下图可知，增速很快。'))), '1line',
+    'T70 独立的一行式子（293x62，在窄门那条线内）仍压到一行高——别为了救图形块把它也放出去');
+  eq(m.IMG_STRIP_MAX_H, 80,
+    'T70 那条窄门写在一处（本批单行式子实测 62–76；124–168 那批会漏，是选出来的取舍）');
   eq(m.IMG_2LINE_RATIO, 2, 'T70 第一道门：宽不过高两倍的是叠行的（分式）');
   eq(m.IMG_2LINE_TALL, 200, 'T70 第二道门：高过 200 的是多行的（实测两行宽式 251）');
   eq(m.IMG_2LINE_MID, 120, 'T70 第三道门的下限：高过 120 才可能被疑为两行');

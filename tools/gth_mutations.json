@@ -306,10 +306,10 @@
     "to": ""
   },
   {
-    "name": "I9 细长条那道筛子去掉（解析里两行宽公式认不出）",
+    "name": "I9 细长条那道筛子去掉（独立统计图 420x260 也被压成两行高）",
     "file": "shangancun-exam-helper.user.js",
-    "from": "    return (tall || el.naturalWidth >= el.naturalHeight * IMG_FORMULA_RATIO) ? imgSizeRole(el) : '';",
-    "to": "    return tall ? imgSizeRole(el) : '';"
+    "from": "    return (strip && (size === '2line' || el.naturalHeight <= IMG_STRIP_MAX_H)) ? size : '';",
+    "to": "    return (size === '2line' || el.naturalHeight <= IMG_STRIP_MAX_H) ? size : '';"
   },
   {
     "name": "I10 高宽比门槛调到 0（等于不筛）",
@@ -580,5 +580,17 @@
     "file": "shangancun-exam-helper.user.js",
     "from": "    if (IMG_OP_SOFT.test(before) && after) return 'math';",
     "to": "    if (IMG_OP_SOFT.test(before)) return 'math';"
+  },
+  {
+    "name": "I31 细长条不再要求占两行或过窄门（六图块 628x153 被压成 80x20）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    return (strip && (size === '2line' || el.naturalHeight <= IMG_STRIP_MAX_H)) ? size : '';",
+    "to": "    return strip ? size : '';"
+  },
+  {
+    "name": "I32 细长条那道窄门归零（独立的一行式子退回原样）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "  var IMG_STRIP_MAX_H = 80;",
+    "to": "  var IMG_STRIP_MAX_H = 0;"
   }
 ]
