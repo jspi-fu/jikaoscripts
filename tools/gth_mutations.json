@@ -592,5 +592,142 @@
     "file": "shangancun-exam-helper.user.js",
     "from": "  var IMG_STRIP_MAX_H = 80;",
     "to": "  var IMG_STRIP_MAX_H = 0;"
-  }
-]
+  },
+  {
+    "name": "U13 入口落点锚回科目名（站点注释掉「公安专业知识」后两颗键一起消失）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "        if (items[i].parentNode === menu && !items[i].classList.contains('gth-menu-item')) {",
+    "to": "        if ((items[i].textContent || '').indexOf('公安专业知识') >= 0) {"
+  },
+  {
+    "name": "U14 找不到锚点就静默不建入口（去掉菜单末尾那一步兜底）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "      else menu.appendChild(btn);",
+    "to": "      else if (!anchor) return null;"
+  },
+  {
+    "name": "U15 观察器不再补挂入口（菜单晚渲染就永远没有）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    injectMenuEntry();",
+    "to": "    // injectMenuEntry();"
+  },
+  {
+    "name": "U16 锚点不排除自家入口（第二次挂到我们自己那颗后面）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "        if (items[i].parentNode === menu && !items[i].classList.contains('gth-menu-item')) {",
+    "to": "        if (items[i].parentNode === menu) {"
+  },
+  {
+    "name": "U17 离开列表路由时连站点那批 .item 一起摘掉",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "      $$('.gth-menu-item').forEach(function (el) {",
+    "to": "      $$('.item').forEach(function (el) {"
+  },
+  {
+    "name": "U18 列表页那一路退回整串等值匹配（站点重排模板就一颗题目都认不出）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    var listNodes = findByNgRepeat('item', 'subjectList');",
+    "to": "    var listNodes = $$('[ng-repeat=\"item in subjectList\"]');"
+  },
+  {
+    "name": "U19 模考那一路退回整串等值匹配（同上，收题也一起断）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    findByNgRepeat('item', 'jiexieSubjects').forEach(function (node) {",
+    "to": "    $$('[ng-repeat=\"item in jiexieSubjects\"]').forEach(function (node) {"
+  },
+  {
+    "name": "U20 表达式解析改成只认单空格写法（多一个空格就一颗题目都认不出）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    var m = /^\\s*([A-Za-z_$][\\w$]*)\\s+in\\s+(.+?)\\s*$/.exec(attr);",
+    "to": "    var m = /^([A-Za-z_$][\\w$]*) in (.+)$/.exec(attr);"
+  },
+  {
+    "name": "U21 不再读 data-ng-repeat 那种正统写法",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "  function ngRepeatOf(node) {\n    var attr = node.getAttribute('ng-repeat') || node.getAttribute('data-ng-repeat') || '';",
+    "to": "  function ngRepeatOf(node) {\n    var attr = node.getAttribute('ng-repeat') || '';"
+  },
+  {
+    "name": "U22 告警不节流（400ms 观察器一路刷屏，等于没有）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    if (said[key] === msg) return;",
+    "to": "    if (false) return;"
+  },
+  {
+    "name": "U23 左菜单宿主缺失那一声删掉（回到静默不建入口）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "      sayOnce('menu', '列表路由上找不到左菜单宿主（.left-menu）——两颗入口这一轮挂不上，观察器下一轮再试');",
+    "to": "      // 这一声被删了"
+  },
+  {
+    "name": "U24 报「认不出题目」前不要见证者（空列表那一屏也跟着报警）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    if (!listNodes.length && $$('.question-box').length) {",
+    "to": "    if (!listNodes.length) {"
+  },
+  {
+    "name": "I33 句末标点那道闸拆掉（两张表 765x207 / 768x126 又被压成一行高）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    if (IMG_SENT_END.test(before)) return null;",
+    "to": "    // 这一道闸被拆了"
+  },
+  {
+    "name": "I36 句末标点缩成只认全角句号（分号与半角问号那类写法漏过）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "  var IMG_SENT_END = /[。！？；!?;]$/;",
+    "to": "  var IMG_SENT_END = /[。]$/;"
+  },
+  {
+    "name": "I34 这道闸挪到字数字槛之后（两句之间那两张表又被「两边都有字」压掉）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    if (IMG_SENT_END.test(before)) return null;\n    if (before.length >= IMG_INLINE_TEXT && after.length >= IMG_INLINE_TEXT) return 'math';",
+    "to": "    if (before.length >= IMG_INLINE_TEXT && after.length >= IMG_INLINE_TEXT) return 'math';\n    if (IMG_SENT_END.test(before)) return null;"
+  },
+  {
+    "name": "I35 这道闸提到运算符与单位那几条之前（「…3亿元。[式子]亿元」那种式子放走）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    if (IMG_OP_HARD.test(before)) return 'math';",
+    "to": "    if (IMG_SENT_END.test(before)) return null;\n    if (IMG_OP_HARD.test(before)) return 'math';"
+  },
+  {
+    "name": "B1 底册少并一类来源（组卷历史里那批题号回到看不见）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    (store.history || []).forEach(function (h) { ((h && h.ids) || []).forEach(add); });",
+    "to": "    void (store.history || []);"
+  },
+  {
+    "name": "B2 底册把 snaps 也算进去（孤儿快照判定自指，那一档永远扫不出东西）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    noteIdsWithHl().forEach(add);",
+    "to": "    noteIdsWithHl().forEach(add);\n    Object.keys(store.snaps || {}).forEach(add);"
+  },
+  {
+    "name": "B3 题本成员退回「笔记 ∪ 划线 ∪ 模考收录」旧口径（站点清空后纯错题永远找不回）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    seenIds().forEach(function (id) { if (!inSiteLists(id)) ids.push(id); });",
+    "to": "    noteIdsWithHl().concat(Object.keys(store.mockQs)).forEach(function (id) { if (ids.indexOf(id) < 0 && !inSiteLists(id)) ids.push(id); });"
+  },
+  {
+    "name": "B4 孤儿快照退回旧判据（找回来的纯错题题面会被「升级后点我」当残留删掉）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    return Object.keys(store.snaps).filter(function (k) { return !seen[k]; });",
+    "to": "    return Object.keys(store.snaps).filter(function (k) { return !store.notes[k] && !(store.highlights[k] && store.highlights[k].length) && !store.mockQs[k]; });"
+  },
+  {
+    "name": "B5 拆掉题本的核对门（没核对过也摊底册，站点其实收着的题会同时出现两份）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    if (!reconciled()) return [];",
+    "to": "    void reconciled();"
+  },
+  {
+    "name": "B6 五档桶退回只补 mock/book（favorite/both 能一直缺着，底册静默少并一档）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "    EXPORT_BUCKETS.forEach(function (k) { if (!data.exported[k]) data.exported[k] = {}; });",
+    "to": "    if (!data.exported.mock) data.exported.mock = {};\n    if (!data.exported.book) data.exported.book = {};"
+  },
+  {
+    "name": "B7 底册不再并导出过的那五档（导出过、没动笔的题号回到看不见）",
+    "file": "shangancun-exam-helper.user.js",
+    "from": "      Object.keys(ex[src] || {}).forEach(add);",
+    "to": "      void src;"
+  }]

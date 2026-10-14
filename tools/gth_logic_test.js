@@ -82,7 +82,7 @@ function varSource(name) {
 }
 
 const CONSTS = ['SUBJ_ZY', 'SUBJ_XC', 'SUBJECT_NAME', 'DAY_RANGES', 'SITE_LIST_CAP', 'FACE_CAP', 'MASTER_STREAK',
-  'WRONG_BASE', 'STUBBORN_MIN', 'ERR_COUNT_KEYS', 'SRC_KEYS', 'SRC_NAME', 'MOCK_UNCLS',
+  'WRONG_BASE', 'STUBBORN_MIN', 'ERR_COUNT_KEYS', 'SRC_KEYS', 'SRC_NAME', 'MOCK_UNCLS', 'EXPORT_BUCKETS',
   'PUNCT_RE', 'KEYACT', 'EXPORT_PREFIX',
   'MOCK_QID_KEYS', 'MOCK_STEM_KEYS', 'MOCK_MAT_KEYS', 'MOCK_OPT_KEYS', 'MOCK_USER_KEYS',
   'MOCK_CORRECT_KEYS', 'MOCK_ANALYSIS_KEYS', 'MOCK_SUBJECT_KEYS', 'MOCK_RESULT_KEYS',
@@ -90,7 +90,7 @@ const CONSTS = ['SUBJ_ZY', 'SUBJ_XC', 'SUBJECT_NAME', 'DAY_RANGES', 'SITE_LIST_C
   'notesFilter', 'notesSearchKey', 'examPointModule', 'SRC_LIST_LABEL', 'BOOK_PER_PAGE',
   'bookShownIds', 'bookPage', 'faceTried', 'IMG_INLINE_TEXT', 'IMG_BOTH_SIDES',
   'IMG_2LINE_RATIO', 'IMG_2LINE_TALL', 'IMG_2LINE_MID', 'IMG_2LINE_MID_RATIO',
-  'IMG_LEAD', 'IMG_OP_HARD', 'IMG_OP_SOFT', 'IMG_CONT', 'IMG_STRIP_MAX_H', 'IMG_MATERIAL_HOST', 'IMG_TEXT_HOST', 'bookFilter',
+  'IMG_LEAD', 'IMG_OP_HARD', 'IMG_OP_SOFT', 'IMG_CONT', 'IMG_STRIP_MAX_H', 'IMG_SENT_END', 'IMG_MATERIAL_HOST', 'IMG_TEXT_HOST', 'bookFilter',
   'IMG_FORMULA_HOST', 'IMG_FRACTION_HOST', 'IMG_FORMULA_RATIO'];
 
 const FNS = ['ansKey', 'serverErrCount', 'errCountOf', 'masteredLabel', 'isMastered',
@@ -110,12 +110,13 @@ const FNS = ['ansKey', 'serverErrCount', 'errCountOf', 'masteredLabel', 'isMaste
   'fetchXingce', 'buildModuleOptions', 'fetchXingceBy', 'fetchFavoriteXingce',
   'listPath', 'listParams', 'esc', 'hlRowHtml', 'noteIdsWithHl',
   'analysisOf', 'snapCopy', 'harvestSnapshot', 'harvestPageSnap', 'pageFrom', 'snapOf', 'snapState',
-  'bookIds', 'bookQuestion', 'bookList', 'orphanSnapIds', 'backfillSnaps', 'ansList',
+  'bookIds', 'bookQuestion', 'bookList', 'orphanSnapIds', 'backfillSnaps', 'ansList', 'seenIds',
   'bookFacets', 'bookMatch', 'bookSearchHit', 'apiSubjectFace', 'faceTypesOf', 'faceGapIds', 'fillOneFace',
   'noteboxHtml', 'abarHtml', 'abarPanelHtml', 'questionCardHtml', 'migrateExported', 'subjectOf',
   'isZyPage', 'zyUrlSubmitted', 'zyScopeSubmitted', 'analysisReady', 'isZyAnalysis', 'abarSig',
   'questionOf',
   'analysisNodeVar', 'analysisScopeItem', 'prunePageRefs',
+  'ngRepeatOf', 'ngRepeatIs', 'sayOnce',
   'pad2', 'unitIdOf', 'noteAreaHtml', 'noteExcerpt', 'bindNoteArea', 'bindNoteAreas',
   'toggleAbarNote', 'renderBookSides', 'bookCardNode', 'bindBookPager', 'bookPageIds', 'bookPageTotal',
   'qtimeExamId', 'qtimeAll', 'qtimeSession', 'qtimeSec', 'qtimeText',
@@ -143,6 +144,8 @@ const PRELUDE = [
   'var location = ctx.location || { search: "", hash: "" };',
   'var isListRoute = function () { return !!ctx.listRoute; };',
   'var $$ = function () { return []; };',
+  // sayOnce 自己的那条「说过没有」备忘录：抽出来的函数只靠 PRELUDE 桩跑，模块级 var 得在这里给一份
+  'var said = {};',
   'var localStorage = { getItem: function () { return ctx.disk; } };',
   'var alert = function (m) { ctx.alerts.push(String(m)); };',
   'var icon = function (n) { return "<svg>" + n + "</svg>"; };',
@@ -175,16 +178,17 @@ const EXPOSED = [
   'getSaved: function () { return ctx.saved; }',
   'fetchXingce', 'buildModuleOptions', 'fetchFavoriteXingce', 'listPath', 'listParams', 'hlRowHtml', 'noteIdsWithHl', 'pickKey',
   'hlHoldLost', 'migrateHlLost', 'washHlLost', 'buildExamPointIndex', 'rememberModulesFromPoints',
-  'SRC_NAME', 'SRC_KEYS', 'SRC_LIST_LABEL', 'SUBJ_XC', 'SUBJ_ZY', 'EXPORT_PREFIX', 'resumeKeyOld', 'readResume', 'clearResume', 'SITE_LIST_CAP', 'FACE_CAP',
+  'SRC_NAME', 'SRC_KEYS', 'SRC_LIST_LABEL', 'SUBJ_XC', 'SUBJ_ZY', 'EXPORT_PREFIX', 'resumeKeyOld', 'readResume', 'clearResume', 'SITE_LIST_CAP', 'FACE_CAP', 'EXPORT_BUCKETS',
   'staleResumeKeys', 'strayStorageKeys', 'ensureExamPointIndex', 'SRC_LIST_LABEL',
   'examTypeFrom', 'subjectFromUrl', 'routeExamType', 'sweepFacets', 'reconcileSources', 'backfillSubject',
   'inSiteLists', 'reconciled',
   'subjectForExport', 'harvestSnapshot', 'harvestPageSnap', 'pageFrom', 'snapOf', 'snapCopy', 'snapState',
-  'bookIds', 'bookQuestion', 'bookList', 'orphanSnapIds', 'backfillSnaps', 'ansList',
+  'bookIds', 'bookQuestion', 'bookList', 'orphanSnapIds', 'backfillSnaps', 'ansList', 'seenIds',
   'bookFacets', 'bookMatch', 'bookSearchHit', 'apiSubjectFace', 'faceTypesOf', 'faceGapIds', 'fillOneFace',
   'noteboxHtml', 'abarHtml', 'abarPanelHtml', 'questionCardHtml', 'migrateExported', 'analysisOf', 'questionOf', 'subjectOf',
   'isZyPage', 'abarSig', 'zyUrlSubmitted', 'analysisReady', 'isZyAnalysis', 'bookFilter', 'MOCK_UNCLS',
   'analysisNodeVar', 'analysisScopeItem', 'prunePageRefs',
+  'ngRepeatOf', 'ngRepeatIs', 'sayOnce',
   'getItemsById: function () { return itemsById; }',
   'getQNodes: function () { return qNodes; }',
   'unitIdOf', 'noteAreaHtml', 'bookPageIds', 'bookPageTotal', 'BOOK_PER_PAGE',
@@ -194,7 +198,7 @@ const EXPOSED = [
   'qtimeExamId', 'qtimeAll', 'qtimeSession', 'qtimeSec', 'qtimeText',
   'qtimeOrder', 'qtimeRows', 'recapSig', 'qtimeBandHtml', 'imgNeighborText', 'imgTextRole',
   'imgIsLead', 'imgLeadNearby', 'imgSizeRole', 'imgFitRole', 'IMG_INLINE_TEXT', 'IMG_BOTH_SIDES',
-  'IMG_2LINE_RATIO', 'IMG_2LINE_TALL', 'IMG_2LINE_MID', 'IMG_2LINE_MID_RATIO', 'IMG_LEAD', 'IMG_OP_HARD', 'IMG_OP_SOFT', 'IMG_CONT', 'IMG_STRIP_MAX_H',
+  'IMG_2LINE_RATIO', 'IMG_2LINE_TALL', 'IMG_2LINE_MID', 'IMG_2LINE_MID_RATIO', 'IMG_LEAD', 'IMG_OP_HARD', 'IMG_OP_SOFT', 'IMG_CONT', 'IMG_STRIP_MAX_H', 'IMG_SENT_END',
   'IMG_MATERIAL_HOST', 'IMG_TEXT_HOST', 'IMG_FORMULA_HOST', 'IMG_FRACTION_HOST', 'IMG_FORMULA_RATIO',
   'tallySecond', 'recSum', 'copyWithToast',
   'getQtimeErr: function () { return qtimeErr; }',
@@ -631,7 +635,7 @@ async function t16() {
     ['hlRowHtml(h, i, \'\')', 1, '笔记面板那一个调用点仍是不挂 title 的'],
     ['hlRowHtml(h, i, \'点击改批注\')', 2, '页边批注栏与重练题目两处仍挂着 title'],
     ['= noteIdsWithHl();', 3, '笔记 tab、一键整理、与站点核对三处共用同一口径'],
-    ['noteIdsWithHl().forEach(', 1, '题本成员也建在同一份「笔记 ∪ 划线」上，只是在它之上剪掉站点在列的那些'],
+    ['noteIdsWithHl().forEach(', 1, '「笔记 ∪ 划线」这一档只喂给题号底册一处，题本成员不再自己并一遍（2026-10-14 起）'],
     ['rerenderAsides();', 2, '恢复数据后与划线变动后两处共用'],
     ["$$('.gth-aside').forEach", 1, '批注栏重画的遍历只有一份'],
     ['if (it && !a.dataset.editing) renderAside(a, it);', 1, '正在编辑的那一题不重画，这条判据还在'],
@@ -1412,7 +1416,7 @@ async function t31() {
   });
   const m = build({ store: store });
   eq(m.bookIds().map(String).sort(), ['1', '3', '5'],
-    'T53 题本成员 = 动过笔或模考收录，且站点错题本与收藏夹里没有它（2 在列，所以离开题本）');
+    'T53 题本成员 = 题号底册 − 站点在列（2026-10-14 起；这一份夹具里底册就是动过笔 ∪ 模考收录，2 在列所以离开题本）');
   eq(m.inSiteLists('2'), true, 'T53 在列名单说得出这道题站点还收着');
   eq(m.inSiteLists('1'), false, 'T53 名单里没有的才算站点没有');
   eq(m.bookQuestion('1').content, '题面一', 'T53 与模考收录撞键时题面取快照');
@@ -1420,7 +1424,7 @@ async function t31() {
   eq(m.bookQuestion('3')._mock, 5158, 'T53 只有模考收录的题也进题本，并带上场次');
   eq(m.bookQuestion('5')._noSnap, 1, 'T53 没快照的题进题本走降级');
   eq(m.bookQuestion('5')._ex, '', 'T53 降级时给的是题干引文');
-  eq(m.orphanSnapIds().map(String), ['4'], 'T53 孤儿快照 = 既无笔记又无划线又非模考收录');
+  eq(m.orphanSnapIds().map(String), ['4'], 'T53 孤儿快照 = 题号底册里找不到它（既无笔记划线、又非模考收录、也不在任何站点名单里）');
   eq(m.bookList().length, 3, 'T53 bookList 与 bookIds 同一条口径');
   const fresh = build({ store: mkStore({ notes: { 1: { text: '甲' } }, qSrcAt: 0 }) });
   eq(fresh.bookIds(), [], 'T53 没与站点核对过时一条都不摊——谁都没资格被算成「站点没有」');
@@ -1467,7 +1471,9 @@ async function t31() {
 (function t57() {
   const m = build({});
   const r = m.migrateExported({ exported: { _v: 2, error: { 1: 1 } }, exportAt: { error: 5 } });
-  eq(Object.keys(r.exported).sort(), ['_v', 'book', 'error', 'mock'], 'T57 旧库补出题本这一桶，既有的桶不重建');
+  eq(Object.keys(r.exported).sort(), ['_v', 'book', 'both', 'error', 'favorite', 'mock'],
+    'T57 五档桶按 EXPORT_BUCKETS 一处出处补齐（旧写法只补 mock/book 两桶，favorite/both 能一直缺着——底册就静默少并一档）');
+  eq(r.exported.error['1'], 1, 'T57 既有的桶内容不重建');
   eq(r.exportAt.book, 0, 'T57 增量基线也要有题本');
 })();
 
@@ -2269,6 +2275,24 @@ async function t67() {
   ok(OPT.indexOf('.gthq-opts') >= 0 && OPT.indexOf('.gthq-stem') >= 0 &&
      MAT.indexOf('.gthq-opts') < 0,
     'T70 题干与选项走「只认竖式」那一份名单，材料不在任何一份里');
+  // —— 2026-10-12 又是误杀：这一对图前后**都**有字，只是前文以句号收尾——一句说完了、图另起一块。
+  // 两张表实测 765x207 与 768x126，与「两行宽式子 1221x251」在几何上是双胞胎，形状分不开。
+  ok(m.IMG_SENT_END.test('最佳决策方案。') && m.IMG_SENT_END.test('最大损益值为100；') &&
+     m.IMG_SENT_END.test('是这样吗?') && !m.IMG_SENT_END.test('平均数为'),
+    'T70 句末标点这一支全角半角都认，但不认「为」那种软收尾（软收尾归上一条管）');
+  eq(m.imgTextRole(pic(0, 0, STEM, txt('再将各个方案的最大潜在后悔值列出。'),
+     txt('根据上述定义,使用后悔值法对上述方案进行决策'))), null,
+    'T70 前文以句号收尾 → 身份这一层不表态：用户报的第一张表就是被「两边都有字」压掉的');
+  eq(m.imgFitRole(pic(765, 207, STEM, txt('再将各个方案的最大潜在后悔值列出。'),
+     txt('根据上述定义,使用后悔值法对上述方案进行决策'))), '',
+    'T70 全程：765x207 那张损益表在题干里原样（形状说它占两行，句子结构说它不在句子里）');
+  eq(m.imgFitRole(pic(768, 126, ANA, txt('在滞销情况下,三个方案中的最大损益值为100。'),
+     txt('观察上表可得,最大潜在后悔值中最小的是方案二'))), '',
+    'T70 全程：768x126 那张后悔值表在解析里原样（同一题的第二枚）');
+  eq(m.imgTextRole(pic(0, 0, STEM, txt('全国完成固定资产投资3亿元。'), txt('亿元,同比增长12%'))), 'math',
+    'T70 单位开头排在这道闸之前：句号挡不住 IMG_CONT（两条规则的先后是行为，不是巧合）');
+  eq(m.imgTextRole(pic(0, 0, ANA, txt('图中阴影部分的面积是正方形面积的'), txt('剩下部分为10平方厘米'))), 'math',
+    'T70 前文不是句末标点时「两边都有字」照旧定式子——这道闸只管句与句之间，不许放宽到整条 ③');
 })();
 
 (function t71() {
@@ -2315,6 +2339,118 @@ async function t67() {
   const q61 = mkStore({ notes: { 70: { text: '', snapshot: '只有引文的旧记录' } } });
   const m2 = build({ store: q61 });
   eq(m2.bookSearchHit(70, '引文'), true, 'T71 没有快照的旧记录退回笔记里那份题干引文，不是一律搜不到');
+})();
+
+(function t72() {
+  // 2026-10-12：站点把左菜单里「公安专业知识」整块注释掉（curl error/shoucang.template.html 复算，
+  // 注释外 0 次），而两颗入口的落点锚在这个名字上、找不到就 return null —— 错题页与收藏页上
+  // 助手整个界面一起消失，脚本只留一行「已注入」，界面上看不出任何原因。
+  const ame = fnSource('addMenuEntry');
+  // 注释里写着「站点把公安专业知识整块注释掉了」是这段的历史，不是锚点；只禁代码里的文字匹配
+  eq(blankLiterals.comments(ame).indexOf('公安专业知识'), -1,
+    'T72 入口落点不许锚在站点文字上：科目名是站点自己会撤掉的内容，锚上去等于把整块界面交给它');
+  eq(raw.indexOf("indexOf('公安专业知识')"), -1,
+    'T72 全脚本不再有「按科目名找节点」这一类锚点');
+  ok(ame.indexOf('parentNode === menu') >= 0 && ame.indexOf("contains('gth-menu-item')") >= 0,
+    'T72 落点取「菜单自己的直接子项里最后一项」，并且把自家那两颗排除掉——否则第二次进来锚点就是我们自己');
+  eq(ame.indexOf('return null'), -1,
+    'T72 找不到锚点也要把入口挂上去（appendChild 到菜单末尾）：静默不建节点是这次最难查的一半');
+  ok(ame.indexOf("id === 'gth-menu-book' && mine") >= 0 && ame.indexOf('mine.nextSibling') >= 0,
+    'T72 题本紧跟在助手后面，两块的相对顺序不随站点菜单项数变化');
+  ok(fnSource('injectMenuEntry').indexOf("'.gth-menu-item'") >= 0,
+    'T72 离开列表路由时把自己那两颗摘掉，站点那批 .item 一个不动');
+  eq((raw.match(/^\s*injectMenuEntry\(\);/gm) || []).length, 2,
+    'T72 开机一次 + 400ms 观察器一次：菜单是 Angular 渲染的，只跑一次会在它画完之前放弃');
+})();
+
+(function t73() {
+  // 同一轮的第二类脆锚点：认题目节点靠站点那条 ng-repeat 表达式。等值选择器 [ng-repeat="a in b"]
+  // 多一个空格、或改写成正统的 data-ng-repeat，就一颗都认不出，而且一声不响——三处现在共用一份解析。
+  const m = build({});
+  function nodeOf(v) {
+    return { getAttribute: function (k) { return k === 'ng-repeat' ? v : null; } };
+  }
+  function nodeOfData(v) {
+    return { getAttribute: function (k) { return k === 'data-ng-repeat' ? v : null; } };
+  }
+  eq(JSON.stringify(m.ngRepeatOf(nodeOf('item in subjectList'))), '{"name":"item","src":"subjectList"}',
+    'T73 表达式拆成「变量名 + 来源」两件事，不再整串比字面');
+  eq(JSON.stringify(m.ngRepeatOf(nodeOf(' item  in   subjectList '))), '{"name":"item","src":"subjectList"}',
+    'T73 空格改动打不倒它：站点哪天重排模板，认题目的口径不变');
+  eq(JSON.stringify(m.ngRepeatOf(nodeOfData('item in subjectList'))), '{"name":"item","src":"subjectList"}',
+    'T73 data-ng-repeat 这种正统写法也读（专项页那条早就是这么读的，现在三处一致）');
+  eq(m.ngRepeatOf(nodeOf('item track by $index')), null,
+    'T73 不是「x in y」的 ng-repeat 不当题目（track by 那种表达式没有来源可认）');
+  eq(m.ngRepeatIs(nodeOf('item in  subjectList'), 'item', 'subjectList'), true,
+    'T73 认表达式：变量名与来源都对上才算');
+  eq(m.ngRepeatIs(nodeOf('item in subjectList'), 'item', 'jiexieSubjects'), false,
+    'T73 来源不同就不算：模考页那条不能混进错题页这一路');
+  eq(m.analysisNodeVar(nodeOf('item in subjectList')), null,
+    'T73 白名单没被这一轮放宽：错题页那条仍然进不了专项解析页那一路');
+  eq(m.analysisNodeVar(nodeOf('subjectObj in  localStorage.currentPartData.subjectList')), 'subjectObj',
+    'T73 专项页那条改空格仍然认得出（容排版不容改名，改名是另一件事）');
+
+  const li = fnSource('injectListUI');
+  ok(li.indexOf("findByNgRepeat('item', 'subjectList')") >= 0 &&
+     fnSource('mockSheetItems').indexOf("findByNgRepeat('item', 'jiexieSubjects')") >= 0,
+    'T73 两处调用点真的改成走那一份解析了（只测函数本体不测接线，等于没守）');
+  eq(li.indexOf('[ng-repeat="item in'), -1,
+    'T73 整串等值选择器不许留在列表页那两路上');
+  ok(li.indexOf("!listNodes.length && $$('.question-box').length") >= 0,
+    'T73 报"认不出题目"之前先要一个见证者：空列表那一屏连 .question-box 都没有，不该吭声');
+
+  const warns = [];
+  const mw = build({ warns: warns });
+  mw.sayOnce('k', '甲');
+  mw.sayOnce('k', '甲');
+  mw.sayOnce('k', '乙');
+  mw.sayOnce('j', '丙');
+  eq(warns.length, 3,
+    'T73 同一条只说一次、内容变了才再说：这些路径在 400ms 观察器的射程里，不节流就是刷屏');
+  eq(warns[0].indexOf('[错题助手] ') === 0, true,
+    'T73 告警走 [错题助手] 前缀，与那半的其它诊断同一个出处');
+
+  eq((raw.match(/^\s*sayOnce\('/gm) || []).length, 3,
+    'T73 三处宿主缺失各有一声：左菜单、壳的内容列、列表页认不出题目');
+})();
+
+(function t74() {
+  // 2026-10-14 站点把错题本清空了：题本成员不能再只认「动过笔 ∪ 模考收录」，
+  // 用户手里剩下的凭据只有本机记过的账。于是新增「题号底册」——本机见过的每一个题目 ID。
+  const store = mkStore({
+    notes: { 1: { text: '甲' } },
+    highlights: { 2: [{ quote: 'q' }], 3: [] },
+    mockQs: { 4: { id: 4, content: '模考题', analysis: 'a' } },
+    qSrc: { 5: 'error' },
+    qModule: { 6: '判断推理' },
+    wrongCount: { 7: 2 },
+    mastered: { 8: 1 },
+    practiced: { 9: { at: 1, n: 1 } },
+    exported: { _v: 2, error: { 10: 1 }, favorite: { 11: 1 }, both: {}, mock: {}, book: {} },
+    history: [{ at: 1, ids: [12, 13] }, { at: 2 }],
+    snaps: { 14: { id: 14, content: '孤儿快照', analysis: 'x' }, 6: { id: 6, content: '找回来的纯错题', analysis: 'a' } },
+    qSrcAt: 5
+  });
+  const m = build({ store: store });
+  eq(m.seenIds().map(Number), [1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+    'T74 底册把每一类来源并进同一份、去重、保持「先笔记划线再模考再站点再杂项」的顺序');
+  eq(m.seenIds().indexOf('3'), -1, 'T74 空划线不算见过——与笔记 tab 共用 noteIdsWithHl 那一条口径');
+  eq(m.seenIds().indexOf('14'), -1,
+    'T74 快照不进底册：孤儿判定拿底册当豁免，把 snaps 算进去就是自指，那一档永远扫不出东西');
+  eq(m.bookIds().map(Number), [1, 2, 4, 6, 7, 8, 9, 10, 11, 12, 13],
+    'T74 题本成员 = 底册 − 站点在列：没动过笔的纯错题（6/7/10…）也进题本，5 站点还收着所以不进');
+  eq(m.orphanSnapIds().map(String), ['14'],
+    'T74 找回来的题面（6，只靠 qModule 进底册）不许被「升级后点我」当残留删掉');
+  const fresh = build({ store: mkStore({ qModule: { 6: '判断推理' }, qSrcAt: 0 }) });
+  eq(fresh.seenIds(), ['6'], 'T74 底册不受核对门限制：没核对过也知道自己见过哪些题');
+  eq(fresh.bookIds(), [], 'T74 那道门留着：没与站点核对过一次，题本仍一条不摊（口径没被这轮放宽）');
+  eq((raw.match(/seenIds\(\)\.forEach\(/g) || []).length, 2,
+    'T74 底册只有一份出处，题本成员与孤儿快照两处都从它取——各写一遍就会漂');
+  ok(fnSource('seenIds').indexOf('EXPORT_BUCKETS.forEach') >= 0 &&
+     fnSource('migrateExported').indexOf('EXPORT_BUCKETS.forEach') >= 0,
+    'T74 那五档导出桶只有一处出处：名单写两遍就会跟着补齐逻辑漂，底册静默少并一档');
+  eq((raw.match(/'error', 'favorite', 'both'/g) || []).length, 1,
+    'T74 硬编码的五档字面量全文只剩 EXPORT_BUCKETS 那一处');
 })();
 
 async function t55() {

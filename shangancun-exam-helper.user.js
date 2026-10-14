@@ -619,10 +619,21 @@
     'mark.gth-hl,#gth-mock-btn';
 
   var EXPORT_HEADERS = ['序号', '科目', '来源', '材料', '题干', '选项', '你的答案', '正确答案', '答错次数', '解析', '笔记', '划线摘录', '掌握状态', '题目ID'];
+  // `store.exported` 与 `store.exportAt` 的那五档桶，一处出处：少一档就是底册静默漏并一批题号
+  var EXPORT_BUCKETS = ['error', 'favorite', 'both', 'mock', 'book'];
   var XLSX_WIDTHS = [6, 16, 12, 30, 60, 50, 10, 10, 10, 60, 40, 40, 14, 12];
 
   function $(sel, root) { return (root || document).querySelector(sel); }
   function $$(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
+
+  // 找不到站点宿主就静默不干活，是这次「脚本明明在跑、界面整块没了」最难查的一半：界面上不放
+  // 解释性文案，但控制台得说一次。同一条只说一次——这些路径在 400ms 观察器的射程里。
+  var said = {};
+  function sayOnce(key, msg) {
+    if (said[key] === msg) return;
+    said[key] = msg;
+    console.warn('[错题助手] ' + msg);
+  }
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -674,6 +685,12 @@
   // 「前后文字」按 DOM 顺序取，跳过 <br> 与内联包裹（<span>/<font>/<b>）：
   // 编辑器爱把字包起来，只认 nodeType 3 的紧邻兄弟会漏掉一半排版（br 隔开与 span 包字那两条）。
   // 不跨块取——祖先的 textContent 会把隔了几层的正文算进来，独占一行的统计表就被误压成一行高。
+  // 句末标点收尾的那一侧，图就不在句子内部了：「…作为最佳决策方案。[图] 根据上述定义…」
+  // 与「…最大损益值为100。[图] 观察上表可得…」是夹在两句之间的一块图（用户 10-12 报的
+  // 两张表 765x207 与 768x126 都是这一形，它们与「两行宽式子 1221x251」在几何上是双胞胎，
+  // 形状分不开，只有句子结构分得开）。这一条只管住 ③ 那两道字数字槛：
+  // ② 的运算符收尾与单位开头排在它前面，所以「…平均数为[式子]亿元」那种仍照常认成式子。
+  var IMG_SENT_END = /[。！？；!?;]$/;
   var IMG_INLINE_TEXT = 8;
   // 两边都有字就认它是句中的图，不必每边都攒够八个字：「气温经常在[0℃]上下波动」这种
   // 前文只有五个字（用户 10-09 晚第二张截图），按八个字判就掉到形状兜底里去了。
@@ -735,6 +752,8 @@
     if (IMG_CONT.test(after)) return 'math';
     // 两边都顶着字，它在句子中间。够长的按式子算（分式两侧各有一截字）；
     // 两边都不长的多是句中一个数字或符号（图里就写着 360°、0℃ 那类）。
+    // 前文以句末标点收尾时不算「句子中间」——那是一句说完、图另起一块。
+    if (IMG_SENT_END.test(before)) return null;
     if (before.length >= IMG_INLINE_TEXT && after.length >= IMG_INLINE_TEXT) return 'math';
     if (before.length >= IMG_BOTH_SIDES && after.length >= IMG_BOTH_SIDES) return 'math';
     return null;
@@ -1020,11 +1039,10 @@
       if (ex && typeof ex === 'object' && !Array.isArray(ex)) {
         Object.keys(ex).forEach(function (k) { if (k !== '_v') conv[k] = 1; });
       }
-      data.exported = { _v: 2, error: conv, favorite: {}, both: {}, mock: {}, book: {} };
+      data.exported = { _v: 2, error: conv };
     }
 
-    if (!data.exported.mock) data.exported.mock = {};
-    if (!data.exported.book) data.exported.book = {};
+    EXPORT_BUCKETS.forEach(function (k) { if (!data.exported[k]) data.exported[k] = {}; });
     var at = data.exportAt;
     if (!at || typeof at !== 'object') {
       data.exportAt = { error: Number(at) || 0, favorite: 0, both: 0, mock: 0, book: 0 };
@@ -1214,13 +1232,35 @@
 
   function reconciled() { return !!store.qSrcAt; }
 
+  // 题号底册：本机替用户记下过账的每一个题目 ID，只增不减（为什么、并了哪几份见 ADR 0010）。
+  // snaps 故意不进：孤儿快照的判定拿底册当豁免表，把快照算进去就是自指，那一档永远扫不出东西。
+  function seenIds() {
+    var out = [], have = {};
+    function add(id) {
+      var k = String(id);
+      if (!k || k === 'undefined' || have[k]) return;
+      have[k] = 1;
+      out.push(k);
+    }
+    noteIdsWithHl().forEach(add);
+    Object.keys(store.mockQs || {}).forEach(add);
+    Object.keys(store.qSrc || {}).forEach(add);
+    Object.keys(store.qModule || {}).forEach(add);
+    Object.keys(store.wrongCount || {}).forEach(add);
+    Object.keys(store.mastered || {}).forEach(add);
+    Object.keys(store.practiced || {}).forEach(add);
+    var ex = store.exported || {};
+    EXPORT_BUCKETS.forEach(function (src) {
+      Object.keys(ex[src] || {}).forEach(add);
+    });
+    (store.history || []).forEach(function (h) { ((h && h.ids) || []).forEach(add); });
+    return out;
+  }
+
   function bookIds() {
     if (!reconciled()) return [];
     var ids = [];
-    noteIdsWithHl().forEach(function (id) { if (!inSiteLists(id)) ids.push(id); });
-    Object.keys(store.mockQs).forEach(function (k) {
-      if (ids.indexOf(k) < 0 && !inSiteLists(k)) ids.push(k);
-    });
+    seenIds().forEach(function (id) { if (!inSiteLists(id)) ids.push(id); });
     return ids;
   }
 
@@ -1247,10 +1287,11 @@
 
   function bookList() { return bookIds().map(bookQuestion); }
 
+  // 孤儿快照 = 有题面、题号底册里却找不到它（找回来的纯错题题面靠 qSrc / qModule 进底册，所以不会被误删）
   function orphanSnapIds() {
-    return Object.keys(store.snaps).filter(function (k) {
-      return !store.notes[k] && !(store.highlights[k] && store.highlights[k].length) && !store.mockQs[k];
-    });
+    var seen = {};
+    seenIds().forEach(function (id) { seen[id] = 1; });
+    return Object.keys(store.snaps).filter(function (k) { return !seen[k]; });
   }
 
   function backfillSnaps(list) {
@@ -1317,7 +1358,8 @@
         if (n >= ids.length) {
           faceFilling = false;
           setStatus('题面补回 ' + gotN + ' 题' + (partN ? '（其中 ' + partN + ' 题站点没给解析正文）' : '') +
-            (missN ? '，' + missN + ' 题没要回来——可能已下架，或认不出是行测还是公专。' : '。'),
+            (missN ? '，' + missN + ' 题没要回来——可能已下架，或认不出是行测还是公专。' : '。') +
+            (ids.length >= FACE_CAP ? '这一轮到了 ' + FACE_CAP + ' 题的上限，还缺题面的自己排下一轮。' : ''),
             missN ? '' : 'ok');
           renderBookList();
           resolve();
@@ -3347,6 +3389,9 @@
       $$('.second-menu, .inner-content', rc).forEach(function (el) { el.classList.toggle('gth-hide', any); });
       if (viewEl.parentNode !== rc) rc.appendChild(viewEl);
       if (bookViewEl.parentNode !== rc) rc.appendChild(bookViewEl);
+    } else if (any) {
+      // 只在真要摊开某一屏时说：两块都关着时 applyChrome 每轮都跑，那时没有宿主不是缺陷
+      sayOnce('chrome', '要摊开视图却找不到站点内容列宿主（.right-content）——这一屏画不出来');
     }
     viewEl.hidden = !viewOn;
     bookViewEl.hidden = !bookViewOn;
@@ -3397,14 +3442,19 @@
       btn.innerHTML = html;
       btn.title = tip;
       btn.addEventListener('click', onClick);
+      // 落点只认「站点自己那几项里的最后一项」，不认科目名：2026-10-12 实测 error.template.html 与
+      // shoucang.template.html 里「公安专业知识」整块被注释掉了（注释外 0 次），锚在名字上
+      // 等于两条列表路由上两颗入口一起消失，而脚本自己一声不响。
       var items = $$('.item', menu), anchor = null;
       for (var i = 0; i < items.length; i++) {
-        if ((items[i].textContent || '').indexOf('公安专业知识') >= 0) { anchor = items[i]; break; }
+        if (items[i].parentNode === menu && !items[i].classList.contains('gth-menu-item')) {
+          anchor = items[i];
+        }
       }
-      if (!anchor) return null;
       var mine = document.getElementById('gth-menu-helper');
-      if (id === 'gth-menu-book' && mine && mine.nextSibling) menu.insertBefore(btn, mine.nextSibling);
-      else if (anchor.nextSibling) menu.insertBefore(btn, anchor.nextSibling);
+      // 题本紧跟在助手后面；助手坐在站点最后一项之后。ref 为 null 就是菜单末尾，用 appendChild。
+      var ref = (id === 'gth-menu-book' && mine) ? mine.nextSibling : (anchor ? anchor.nextSibling : null);
+      if (ref) menu.insertBefore(btn, ref);
       else menu.appendChild(btn);
     }
     btn.classList.toggle('active', !!active);
@@ -3421,12 +3471,15 @@
       });
       return;
     }
-    if (!menu) return;
+    if (!menu) {
+      sayOnce('menu', '列表路由上找不到左菜单宿主（.left-menu）——两颗入口这一轮挂不上，观察器下一轮再试');
+      return;
+    }
 
     addMenuEntry(menu, 'gth-menu-helper', '<div class="text">' + icon('sparkles') + '机考助手</div>',
       '笔记 / 导出 / 重练 / 掌握状态', function () { setView(!viewOn); }, viewOn);
     addMenuEntry(menu, 'gth-menu-book', '<div class="text">' + icon('listChecks') + '补充题本</div>',
-      '站点没收进来的题：写过笔记、划过线，或模考收进来的', function () { setBookView(!bookViewOn); }, bookViewOn);
+      '站点没收进来的题：本机记过的都算（笔记、划线、答错、导出、组卷、模考收录）', function () { setBookView(!bookViewOn); }, bookViewOn);
   }
 
   document.addEventListener('click', function (e) {
@@ -3601,7 +3654,7 @@
   $('#gth-wipe').addEventListener('click', function () {
     var nNote = Object.keys(store.notes).length;
     var nStat = Object.keys(store.mastered).length;
-    var nExp = ['error', 'favorite', 'both', 'mock'].reduce(function (a, k) {
+    var nExp = EXPORT_BUCKETS.reduce(function (a, k) {
       return a + Object.keys(exIds(k)).length;
     }, 0);
     var nHis = (store.history || []).length;
@@ -4068,7 +4121,7 @@
     if (!ids.length) {
       if (countEl) countEl.textContent = '';
       empty('<div class="gth-empty">' + icon('listChecks') +
-        '<div>补充题本还是空的。写过笔记或划过线的题，只要站点错题本与收藏夹里还没有它，就会自己进来。</div></div>');
+        '<div>补充题本还是空的。本机记过的题——写过笔记、划过线、答错过、导出过、组过卷、模考收进来——只要站点错题本与收藏夹里还没有它，就会自己进来。</div></div>');
       return;
     }
     if (!bookShownIds.length) {
@@ -4085,8 +4138,10 @@
     if (bookPage > total) bookPage = total;
     var pageIds = bookPageIds();
     if (countEl) {
+      var gapN = ids.reduce(function (a, id) { return snapState(id) === 'full' ? a : a + 1; }, 0);
       countEl.textContent = (bookNarrowed() ? bookShownIds.length + ' / ' : '') + ids.length +
-        ' 题 · 第 ' + bookPage + ' / ' + total + ' 页';
+        ' 题 · 第 ' + bookPage + ' / ' + total + ' 页' +
+        (gapN ? ' · 题面不齐 ' + gapN + ' 题' : '');
     }
     if (pagerEl) pagerEl.innerHTML = bookPagerHtml(bookPage, total);
     listEl.innerHTML = pageIds.map(function (id, i) {
@@ -4568,7 +4623,13 @@
     if (!ang) return;
     var railInner = $('#gth-rail-in');
     if (!railInner) return;
-    $$('[ng-repeat="item in subjectList"]').forEach(function (node) {
+    var listNodes = findByNgRepeat('item', 'subjectList');
+    // 表达式改了才报：空列表时站点画的是「暂无数据」，那一屏连 .question-box 都不在，不会误报
+    if (!listNodes.length && $$('.question-box').length) {
+      sayOnce('list', '这一页有 ' + $$('.question-box').length + ' 个 .question-box，但没有一条 ' +
+        'ng-repeat 是「item in subjectList」——站点改了表达式，错题页那行小条挂不上');
+    }
+    listNodes.forEach(function (node) {
       if (node.dataset.gth) return;
       var item = null;
       try { item = ang.element(node).scope().item; } catch (e) { return; }
@@ -6179,7 +6240,7 @@
     var ng = getAngular();
     if (!ng) return [];
     var out = [], seen = {};
-    $$('[ng-repeat="item in jiexieSubjects"]').forEach(function (node) {
+    findByNgRepeat('item', 'jiexieSubjects').forEach(function (node) {
       var it;
       try { it = ng.element(node).scope().item; } catch (e) { return; }
       if (!it || typeof it !== 'object' || !/^\d+$/.test(String(it.id || ''))) return;
@@ -6366,12 +6427,33 @@
     console.warn('[错题助手] 专项页 URL 说是交卷态，但 scope 上没等到 isAlreadySubmit，本页先不挂笔记入口');
   }
 
-  function analysisNodeVar(node) {
+  // 站点那条 ng-repeat 表达式是我们认题目的唯一依据。整串等值匹配（CSS 的 [ng-repeat="a in b"]）
+  // 会被排版打死：多一个空格、或换成正统的 data-ng-repeat 写法，就一颗都认不出，而且一声不响。
+  // 所以解析只留这一份——两种写法都读、空格折掉，比的是「变量名 + 表达式」这两件事实。
+  function ngRepeatOf(node) {
     var attr = node.getAttribute('ng-repeat') || node.getAttribute('data-ng-repeat') || '';
     var m = /^\s*([A-Za-z_$][\w$]*)\s+in\s+(.+?)\s*$/.exec(attr);
     if (!m) return null;
-    var name = m[1], src = m[2].replace(/\s+/g, '');
-    if (name === 'subjectObj' && /currentPartData\.subjectList$/.test(src)) return name;
+    return { name: m[1], src: m[2].replace(/\s+/g, '') };
+  }
+
+  function ngRepeatIs(node, name, src) {
+    var r = ngRepeatOf(node);
+    return !!r && r.name === name && r.src === src;
+  }
+
+  // 全页扫一遍再按表达式筛：列表页上一共只有 4 条 ng-repeat，扫得起；
+  // 而等值选择器一旦不匹配，代价是整块功能静默消失。
+  function findByNgRepeat(name, src) {
+    return $$('[ng-repeat],[data-ng-repeat]').filter(function (n) {
+      return ngRepeatIs(n, name, src);
+    });
+  }
+
+  function analysisNodeVar(node) {
+    var r = ngRepeatOf(node);
+    if (!r) return null;
+    if (r.name === 'subjectObj' && /currentPartData\.subjectList$/.test(r.src)) return r.name;
     return null;
   }
 

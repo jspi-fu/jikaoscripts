@@ -41,6 +41,7 @@ function varOf(name) {
 }
 const CONSTS = ['IMG_INLINE_TEXT', 'IMG_BOTH_SIDES', 'IMG_2LINE_RATIO', 'IMG_2LINE_TALL', 'IMG_2LINE_MID',
   'IMG_2LINE_MID_RATIO', 'IMG_LEAD', 'IMG_OP_HARD', 'IMG_OP_SOFT', 'IMG_CONT', 'IMG_STRIP_MAX_H',
+  'IMG_SENT_END',
   'IMG_MATERIAL_HOST', 'IMG_TEXT_HOST', 'IMG_FORMULA_HOST', 'IMG_FRACTION_HOST', 'IMG_FORMULA_RATIO'];
 const FNS = ["imgIsLead", "imgNeighborText", "imgTextRole", "imgLeadNearby", "imgSizeRole", "imgFitRole"];
 const impl = new Function([
@@ -117,6 +118,19 @@ const CASES = [
   // —— 反例：字数字槛（8/2）就是为这一格留的 ——
   // 「见 [统计图] 可知」把图形夹在两个字中间：放宽到各一个字，800x400 的表会被压成 78x39。
   ['解析·表夹在两字间', 'analysis', '<p>见<img>可知增长最快。</p>', 800, 400, 'keep', '两边字都不成句，这一层不表态'],
+
+  // —— 2026-10-12 又是误杀，但这一对与 628x153 那格不同形：图前后都**有**字，
+  // 只是前文以句号收尾——「一句说完了，图另起一块」。两张表实测 765x207 与 768x126，
+  // 与「两行宽式子 1221x251」在几何上是双胞胎，形状分不开，只有句子结构分得开。
+  ['题干·两句之间的表', 'stem',
+    '<p>后悔值是指在某种状态下因选择某方案而未选取该状态下的最佳方案而少得的收益,再将各个方案的最大潜在后悔值列出。<img>根据上述定义,使用后悔值法对上述方案进行决策,所选择的最佳方案是</p>',
+    765, 207, 'keep', '前文以句号收尾 → 这枚图不在句子内部（用户报的第一张损益表）'],
+  ['解析·两句之间的表', 'analysis',
+    '<p>在畅销状态下,三个方案中的最大损益值为800;在一般情况下,三个方案中的最大损益值为400;在滞销情况下,最大损益值为100。<img>观察上表可得,最大潜在后悔值中最小的是方案二,故为最佳决策方案。</p>',
+    768, 126, 'keep', '同一题解析里那张后悔值表，768x126 也夹在两句之间'],
+  ['题干·句号后接单位仍算式子', 'stem',
+    '<p>2019年1—7月,全国完成固定资产投资3亿元。<img>亿元,同比增长12%。</p>',
+    630, 64, '1line', 'IMG_CONT 排在这道闸之前：单位开头先命中，句号挡不住它（钉住两条规则的先后）'],
 
   // —— 解析：例外，图不是公式，原样 ——
   ['解析·饼图', 'analysis', '<p>如下饼图所示：</p><p><img></p>', 670, 447, 'keep', '饼图原样'],

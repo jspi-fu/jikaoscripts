@@ -129,7 +129,10 @@ var BOOT = [
   '  else if (/\\/favorite\\/view\\?/.test(u)) data = { subject_list: [], total_items: 0 };',
   '  else if (/api\\/v2\\/tiku\\/\\d+\\/(\\d+)\\/analysis/.test(u)) {',
   '    var qid = Number(RegExp.$1);',
-  '    data = { id: qid, question: "<p>补齐回来的第 " + qid + " 题题面。</p>",',
+  // 902（只有划线）与 904（只有题号底册）故意要不回来：题本头部那句「题面不齐」才有稳定的数可量，
+  // 顺带把「捞不回来就留在题本走降级显示」那一条口径也真摊在一屏上（ADR 0010 决策 7）
+  '    if (qid === 902 || qid === 904) data = null;',
+  '    else data = { id: qid, question: "<p>补齐回来的第 " + qid + " 题题面。</p>",',
   '      option: [{ label: "A", content: "甲" }, { label: "B", content: "乙" }],',
   '      correct_answer: ["A"], user_answer: ["B"], explanation: "<p>补齐回来的解析正文。</p>" };',
   '  }',
@@ -166,12 +169,15 @@ var BOOT = [
   '  notes: { 901: { text: "增长量比较先截三位", snapshot: "以下年份中，江浙沪地区年人均消费支出年增长量最多的是", subject: 0, updated: Date.now() - 86400000 } },',
   '  highlights: { 902: [{ quote: "看表末列", color: "yellow", at: Date.now() - 3600000, block: "analysis", nth: 1, prefix: "" }] },',
   '  mastered: {}, wrongCount: { 901: 3 },',
-  '  exported: { _v: 2, error: {}, favorite: {}, both: {}, mock: {} }, exportAt: {},',
+  // 904 = 只在题号底册里出现的那一道：没写过笔记、没划过线、不在模考收录、站点也不再列它
+  // （qModule 与 exported.error 都只增，2026-10-14 站点清空错题本之后它们就是用户仅剩的凭据）。
+  // 旧口径下它永远进不了补充题本；新口径（成员 = 底册 − 站点在列）必须把它摊出来。
+  '  exported: { _v: 2, error: { 904: 1 }, favorite: {}, both: {}, mock: {} }, exportAt: {},',
   '  history: [], resume: {},',
   '  mockQs: { 903: { id: 903, content: "模考收进来的那道题", material: "", opt: [{ label: "A", content: "甲" }, { label: "B", content: "乙" }],',
   '    correct_answer: ["A"], user_answer: ["B"], analysis: "模考题的解析正文，题本里要能摊开看到。", content_type: 0,',
   '    module: "资料分析", examId: 5158, done: 1, ok: 0, at: Date.now() - 7200000 } },',
-  '  mocks: {}, practiced: {}, qModule: { 901: "资料分析" }, qSrc: { 901: "error" },',
+  '  mocks: {}, practiced: {}, qModule: { 901: "资料分析", 904: "言语理解" }, qSrc: { 901: "error" },',
   '  qSrcAt: Date.now() - 60000, _v: 1',
   '}));',
   '// 补上 45 道只有笔记台记得的题，补充题本才够翻三页（一页 20 题那条口径要真的量得出来）',
@@ -269,6 +275,54 @@ var BOOT = [
   '    console.log(line);',
   '  }, 300);',
   '}',
+  // 左菜单那两颗入口是助手在列表页上唯一的入口。2026-10-12 站点把菜单里「公安专业知识」整块注释掉，
+  // 我们的落点锚在那个名字上 → 两颗键一起消失，而脚本只留一行"已注入"。这一份判词守着这条路，
+  // 写在 DOM 里（不只 console）是因为 headless 那台只有 --dump-dom 读得到。
+  'function __gthMenuReport(roster) {',
+  '  var menu = document.querySelector(".left-menu");',
+  '  var kids = menu ? [].slice.call(menu.children) : [];',
+  '  var site = kids.filter(function (el) {',
+  '    return el.classList.contains("item") && !el.classList.contains("gth-menu-item");',
+  '  });',
+  '  var h = document.getElementById("gth-menu-helper");',
+  '  var b = document.getElementById("gth-menu-book");',
+  '  var idx = function (el) { return el && menu ? kids.indexOf(el) : -1; };',
+  '  var last = site.length ? idx(site[site.length - 1]) : -1;',
+  '  var cards = document.querySelectorAll("#gth-book-list .gth-book-card").length;',
+  '  var inMenu = !!(h && b && h.parentNode === menu && b.parentNode === menu);',
+  '  var ordered = inMenu && idx(h) > last && idx(b) > idx(h);',
+  '  var ok = inMenu && ordered && cards > 0;',
+  '  var rows = ["GTH_MENU 站点项=" + site.length +',
+  '    " 助手入口=" + (h ? "在" : "缺") + " 题本入口=" + (b ? "在" : "缺"),',
+  '    "挂在左菜单里=" + (inMenu ? "是" : "否") +',
+  '    " 排在站点最后一项之后=" + (ordered ? "是" : "否") + " 题本卡=" + cards,',
+  '    "判定：" + (ok ? "绿" : "红（入口挂不上、落点不对或题本没开）")];',
+  '  var pre = document.createElement("pre");',
+  '  pre.id = "gth-menu";',
+  '  pre.textContent = rows.join("\\n");',
+  '  document.body.appendChild(pre);',
+  '  console.log(rows.join("\\n"));',
+  // 翻页会挪走第一页，图片那一台量的就是第一页——所以这份判词只在 gth_book 这一台翻页
+  '  if (!roster) return;',
+  // 题号底册那一档的判词：904 只在 qModule 与 exported.error 里出现过（站点不再列它、也没动过笔），
+  // 旧口径下它根本进不了题本。翻到末页量它真摊开了没有，顺带量头部那句计数。
+  '  var cnt = (document.getElementById("gth-book-count") || {}).textContent || "";',
+  '  var headOk = cnt.indexOf("48 题") >= 0 && cnt.indexOf("题面不齐 2 题") >= 0;',
+  '  var pg3 = document.querySelector(\'#gth-book-pager button[data-page="3"]\');',
+  '  if (pg3) pg3.click();',
+  '  setTimeout(function () {',
+  '    var n3 = document.querySelectorAll("#gth-book-list .gth-book-card").length;',
+  '    var got = !!document.querySelector(\'.gth-book-card[data-id="904"]\');',
+  '    var r2 = ["GTH_ROSTER 头部=\\"" + cnt + "\\" 末页卡=" + n3 +',
+  '      " 底册独有的 904 摊开了=" + (got ? "是" : "否"),',
+  '      "判定：" + (headOk && n3 === 8 && got ? "绿" : "红（成员口径、头部计数或末页那张卡不对）")];',
+  '    var p2 = document.createElement("pre");',
+  '    p2.id = "gth-roster";',
+  '    p2.textContent = r2.join("\\n");',
+  '    document.body.appendChild(p2);',
+  '    console.log(r2.join("\\n"));',
+  '  }, 400);',
+  '}',
   'setTimeout(function () {',
   '  var s = location.search;',
   '  if (s.indexOf("gth_book") >= 0 || s.indexOf("gth_img") >= 0) {',
@@ -276,6 +330,7 @@ var BOOT = [
   '      var b = document.getElementById("gth-menu-book");',
   '      if (!b) return false;',
   '      b.click();',
+  '      setTimeout(function () { __gthMenuReport(location.search.indexOf("gth_book") >= 0); }, 400);',
   '      return true;',
   '    });',
   '  }',
@@ -337,7 +392,11 @@ function page(title, bodyHtml, bootExtra) {
 
 var INDEX_BODY = [
   '<div class="gongan2-container"><div class="right-content" style="display:flex">',
-  '<div class="left-menu"><div class="item">行测</div><div class="item">公安专业知识</div><div class="item">错题本</div></div>',
+  // 照 error.template.html 抄：注释外的左菜单就两项，「公安专业知识」整块在注释里（2026-10-12 curl 复算）。
+  // 原来这里写成 行测/公安专业知识/错题本 三项，于是"入口锚在科目名上"那种缺陷在夹具里永远暴露不出来。
+  '<div class="left-menu">' +
+  '<div class="item zero-flex-ver-center"><div class="text">日期</div></div>' +
+  '<div class="item zero-flex-ver-center"><div class="text">行政职业能力测试</div></div></div>',
   '<div class="inner-content"><div class="content" id="gth-list"></div></div>',
   '</div></div>',
   '<script>',
